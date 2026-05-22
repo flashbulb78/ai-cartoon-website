@@ -1,0 +1,6 @@
+{
+  "roo-cline.apiProvider": "openai-compatible",
+  "roo-cline.openAiCompatibleBaseUrl": "https://api.minimaxi.com/v1",
+  "roo-cline.openAiCompatibleApiKey": "sk-api-1RLd5MD4hLkchrFjgtYynKe-XKZIdX7HRm_2sTMn2o1S9PtoBJ2OXKmoTrgZ1Vjlw39_DshelmTn4VifnWg_kK0YkKS8jwqQ2a4YluIlPuCThMr7sgjYYMc",
+  "roo-cline.openAiCompatibleModelId": "MiniMax-Text-M2.7"
+}

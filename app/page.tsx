@@ -1,146 +1,502 @@
 'use client';
 
-import { useState } from 'react';
+/**
+ * app/page.tsx
+ * AI卡通头像生成网站首页
+ *
+ * 功能：
+ * - 图片上传与预览（支持拖拽、格式校验、分辨率校验）
+ * - 风格选择（4种卡通风格）
+ * - 调用后端API生成卡通头像（带防抖和重复提交拦截）
+ * - 结果展示、下载与复制功能
+ *
+ * 认证相关：
+ * - 未登录时显示登录提示，拦截生成按钮
+ * - 登录后显示剩余次数
+ * - 次数不足时引导充值
+ *
+ * 预留扩展：
+ * - Stripe付费功能（onUpgrade props）
+ */
 
-export default function Home() {
-  const [image, setImage] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [result, setResult] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+import { useState, useCallback, useEffect } from 'react';
+import Link from 'next/link';
+import { Header } from '@/components/Header';
+import { ImageUploader } from '@/components/ImageUploader';
+import { StyleSelector } from '@/components/StyleSelector';
+import { ResultViewer } from '@/components/ResultViewer';
+import { GenerationParameters } from '@/components/GenerationParameters';
+import { Button } from '@/components/ui/Button';
+import { useAuth } from '@/contexts/AuthContext';
+import { CartoonStyle, ApiResponse, GenerateResponseData, STYLE_DEFAULT_PARAMS } from '@/lib/types';
+import { DEFAULT_STYLE, ERROR_MESSAGES } from '@/lib/constants';
+import { useFaceCrop } from '@/hooks/useFaceCrop';
 
-  // 当用户选择图片时
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setImage(file);
-      setPreview(URL.createObjectURL(file)); // 显示本地预览
-      setResult(null); // 重置上一次的结果
+export default function HomePage() {
+  // ========== 认证状态 ==========
+  const { user, profile, isLoading: isAuthLoading, decrementCredits, signOut } = useAuth();
+
+  // ========== 本地状态 ==========
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedStyle, setSelectedStyle] = useState<CartoonStyle>(DEFAULT_STYLE);
+  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showCreditsModal, setShowCreditsModal] = useState(false);
+  const [isCropping, setIsCropping] = useState(false);
+
+  // ========== 生成参数状态（已上调人脸相似度基准权重）==========
+  // face_similarity_strength=0.9, style_strength=0.25, fidelity=0.85
+  // 最大化贴合原生五官轮廓、脸型比例，缩小画面整体差异度
+  const [faceSimilarity, setFaceSimilarity] = useState<number>(0.9);
+  const [styleStrength, setStyleStrength] = useState<number>(0.25);
+  const [fidelity, setFidelity] = useState<number>(0.85);
+
+  // ========== 人脸裁剪 ==========
+  const { cropFace, isLoading: isCropLoading } = useFaceCrop();
+
+  // 防止重复提交的ref
+  const isGeneratingRef = useState(false)[1];
+
+  // ========== 回调函数 ==========
+
+  /**
+   * 处理图片变化 - 自动裁剪人脸
+   */
+  const handleImageChange = useCallback(async (base64: string | null) => {
+    if (!base64) {
+      setSelectedImage(null);
+      setError(null);
+      setSuccess(null);
+      return;
     }
-  };
 
-  // 上传图片并调用 AI
-  const transformImage = async () => {
-    if (!image) return;
-    setLoading(true);
-  
+    setIsCropping(true);
+    setError(null);
+    setSuccess(null);
+
     try {
-      // 发送请求到刚才建的 API
+      // 自动裁剪人脸
+      const result = await cropFace(base64);
+      if (result.success && result.croppedImage) {
+        setSelectedImage(result.croppedImage);
+      } else {
+        setError(result.error || 'Face cropping failed');
+        setSelectedImage(null);
+      }
+    } catch (err) {
+      console.error('[Page] Image change error:', err);
+      setError('Failed to process image');
+      setSelectedImage(null);
+    } finally {
+      setIsCropping(false);
+    }
+  }, [cropFace]);
+
+  /**
+   * 处理风格变化
+   */
+  const handleStyleChange = useCallback((style: CartoonStyle) => {
+    setSelectedStyle(style);
+    // Auto-adjust parameters based on style defaults for optimal results
+    const defaults = STYLE_DEFAULT_PARAMS[style];
+    if (defaults) {
+      setFaceSimilarity(defaults.faceSimilarity);
+      setStyleStrength(defaults.styleStrength);
+      setFidelity(defaults.fidelity);
+    }
+  }, []);
+
+  /**
+   * 生成卡通头像
+   */
+  const handleGenerate = useCallback(async () => {
+    // 1. 登录检查
+    if (!user) {
+      setShowLoginModal(true);
+      return;
+    }
+
+    // 2. 次数检查
+    if (profile && profile.credits <= 0) {
+      setShowCreditsModal(true);
+      return;
+    }
+
+    // 3. 重复提交拦截
+    if (isGenerating) return;
+
+    // 4. 前置校验
+    if (!selectedImage) {
+      setError(ERROR_MESSAGES.NO_IMAGE);
+      return;
+    }
+
+    // 5. 设置生成状态
+    setIsGenerating(true);
+    setError(null);
+    setSuccess(null);
+    setGeneratedImage(null);
+
+    try {
+      // 6. 调用API
+      console.log('[Page] Sending generation request');
+      console.log('[Page] selectedImage type:', typeof selectedImage);
+      console.log('[Page] selectedImage length:', selectedImage?.length);
+      console.log('[Page] selectedImage prefix:', selectedImage?.substring(0, 50));
+      console.log('[Page] selectedStyle:', selectedStyle);
+      
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        // 关键：把预览图的 URL 传给后端
-        body: JSON.stringify({ image: preview }), 
+        body: JSON.stringify({
+          image: selectedImage,
+          style: selectedStyle,
+          faceSimilarity,
+          styleStrength,
+          fidelity,
+        }),
       });
-  
-      const data = await response.json();
-  
-      if (data.result) {
-        setResult(data.result); // 设置 AI 生成的结果图
+      
+      console.log('[Page] Response status:', response.status);
+
+      // 7. 解析响应
+      const result: ApiResponse<GenerateResponseData> = await response.json();
+
+      // 8. 处理结果
+      if (result.success && result.data) {
+        setGeneratedImage(result.data.imageUrl);
+        setSuccess('Avatar generated successfully!');
+        // 扣减本地次数（服务器端也会扣减）
+        decrementCredits();
       } else {
-        alert('生成失败：' + data.error);
+        const errorMessage = result.error || ERROR_MESSAGES.GENERATION_FAILED;
+        setError(errorMessage);
       }
-  
-    } catch (error) {
-      console.error(error);
-      alert('出错了');
+    } catch (err) {
+      console.error('Generation error:', err);
+      setError(ERROR_MESSAGES.NETWORK_ERROR);
     } finally {
-      setLoading(false);
+      setIsGenerating(false);
     }
-  };
+  }, [user, profile, isGenerating, selectedImage, selectedStyle, faceSimilarity, styleStrength, fidelity, decrementCredits]);
+
+  /**
+   * 重新生成
+   */
+  const handleRegenerate = useCallback(() => {
+    if (!isGenerating && !profile?.is_premium && profile && profile.credits <= 0) {
+      setShowCreditsModal(true);
+      return;
+    }
+    handleGenerate();
+  }, [handleGenerate, profile]);
+
+  /**
+   * 下载完成回调
+   */
+  const handleDownload = useCallback(() => {
+    setSuccess('Image downloaded!');
+    setTimeout(() => setSuccess(null), 3000);
+  }, []);
+
+  /**
+   * 登录页跳转
+   */
+  const handleLogin = useCallback(() => {
+    window.location.href = '/auth/login';
+  }, []);
+
+  /**
+   * 定价页跳转
+   */
+  const handlePricing = useCallback(() => {
+    window.location.href = '/pricing';
+  }, []);
+
+  /**
+   * 升级按钮（预留Stripe）
+   */
+  const handleUpgrade = useCallback(() => {
+    // TODO: 跳转Stripe支付页
+    console.log('Upgrade clicked - Stripe payment');
+  }, []);
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-50">
-      <div className="z-10 w-full max-w-2xl items-center justify-between font-mono text-sm lg:max-w-4xl">
-        <h1 className="text-4xl font-bold text-center mb-8 text-gray-800">
-          AI 卡通头像生成器
-        </h1>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+      {/* 头部 - 已集成用户信息显示 */}
+      <Header
+        isLoggedIn={!!user}
+        userName={user ? (profile?.username || profile?.full_name || 'User') : undefined}
+        userAvatar={profile?.avatar_url}
+        credits={profile?.credits}
+        onLogin={handleLogin}
+        onPricing={handlePricing}
+        onSignOut={signOut}
+      />
 
-        {/* 上传区域 */}
-        <div className="flex flex-col items-center gap-6">
-          <div className="flex flex-col items-center justify-center w-full">
-            <label
-              htmlFor="dropzone-file"
-              className="flex flex-col items-center justify-center w-full h-64 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100"
-            >
-              <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                {preview ? (
-                  <img src={preview} alt="Preview" className="h-full object-contain" />
-                ) : (
-                  <>
+      {/* 主内容区 */}
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* 页面标题 */}
+        <div className="text-center mb-8">
+          <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">
+            Create Your AI Cartoon Avatar
+          </h2>
+          <p className="mt-3 text-gray-600 max-w-2xl mx-auto">
+            Upload your photo and choose a style to generate a unique cartoon avatar in seconds
+          </p>
+        </div>
+
+        {/* 编辑器区域 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+          {/* 左侧：配置区 */}
+          <div className="space-y-5">
+            {/* 剩余次数提示（已登录用户） */}
+            {user && profile && (
+              <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-4 border border-blue-100">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                      <span className="text-xl">✨</span>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-900">
+                        {profile.credits} Credits Available
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {profile.is_premium ? 'Premium member - unlimited generations' : 'Free tier'}
+                      </p>
+                    </div>
+                  </div>
+                  {!profile.is_premium && (
+                    <Button variant="primary" size="sm" onClick={() => window.location.href = '/pricing'}>
+                      Upgrade
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 图片上传卡片 */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+                  1
+                </span>
+                Upload Photo
+              </h3>
+              <ImageUploader
+                onImageChange={handleImageChange}
+                disabled={isGenerating}
+              />
+            </div>
+
+            {/* 风格选择卡片 */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+                  2
+                </span>
+                Choose Style
+              </h3>
+              <StyleSelector
+                value={selectedStyle}
+                onChange={handleStyleChange}
+                disabled={isGenerating}
+              />
+            </div>
+
+            {/* 生成参数卡片 */}
+            <GenerationParameters
+              faceSimilarity={faceSimilarity}
+              styleStrength={styleStrength}
+              fidelity={fidelity}
+              onFaceSimilarityChange={setFaceSimilarity}
+              onStyleStrengthChange={setStyleStrength}
+              onFidelityChange={setFidelity}
+              disabled={isGenerating}
+            />
+
+            {/* 生成按钮卡片 */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+                  3
+                </span>
+                Generate
+              </h3>
+
+              {/* 未登录提示 */}
+              {!user && !isAuthLoading && (
+                <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                  <div className="flex items-start gap-3">
                     <svg
-                      className="w-8 h-8 mb-4 text-gray-500"
-                      aria-hidden="true"
                       xmlns="http://www.w3.org/2000/svg"
+                      className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5"
                       fill="none"
-                      viewBox="0 0 20 16"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
                     >
                       <path
-                        stroke="currentColor"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        strokeWidth="2"
-                        d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"
+                        strokeWidth={2}
+                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                       />
                     </svg>
-                    <p className="mb-2 text-sm text-gray-500">
-                      <span className="font-semibold">点击上传图片</span> 或拖拽
-                    </p>
-                    <p className="text-xs text-gray-500">JPG, PNG (推荐正方形图片)</p>
-                  </>
-                )}
-              </div>
-              <input
-                id="dropzone-file"
-                type="file"
-                className="hidden"
-                accept="image/*"
-                onChange={handleImageChange}
-              />
-            </label>
+                    <div>
+                      <p className="text-sm text-amber-800 font-medium">Login required</p>
+                      <p className="text-sm text-amber-700 mt-1">
+                        Please login to generate avatars and track your credits
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 生成按钮 */}
+              <Button
+                onClick={handleGenerate}
+                disabled={!selectedImage || isGenerating}
+                isLoading={isGenerating}
+                className="w-full"
+                size="lg"
+              >
+                {isGenerating
+                  ? 'Generating...'
+                  : !selectedImage
+                  ? 'Select an Image First'
+                  : 'Generate Avatar'}
+              </Button>
+
+              {/* 错误/成功提示 */}
+              {error && (
+                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl">
+                  <div className="flex items-start gap-3">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <p className="text-sm text-red-700">{error}</p>
+                  </div>
+                </div>
+              )}
+
+              {success && (
+                <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-xl">
+                  <div className="flex items-start gap-3">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <p className="text-sm text-green-700">{success}</p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* 风格选择（演示用） */}
-          {preview && (
-            <div className="flex gap-4">
-              <button className="px-4 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                迪士尼风格
-              </button>
-              <button className="px-4 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                皮克斯风格
-              </button>
-              <button className="px-4 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                吉卜力风格
-              </button>
-            </div>
-          )}
-
-          {/* 生成按钮 */}
-          <button
-            onClick={transformImage}
-            disabled={!image || loading}
-            className={`w-full px-6 py-3 text-white rounded-lg font-bold transition-colors ${
-              !image || loading
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700'
-            }`}
-          >
-            {loading ? '正在施法中...' : '生成卡通图 (消耗 1 点数)'}
-          </button>
-
-          {/* 结果展示 */}
-          {result && (
-            <div className="mt-8 p-4 border rounded-lg bg-white shadow-sm w-full">
-              <h2 className="text-xl font-bold mb-4 text-center">生成结果</h2>
-              <img src={result} alt="Result" className="w-full rounded-lg" />
-              <p className="text-center mt-2 text-sm text-gray-500">
-                生成成功！这是你的新头像。
-              </p>
-            </div>
-          )}
+          {/* 右侧：结果预览区 */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+              <span className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+                ✨
+              </span>
+              Result
+            </h3>
+            <ResultViewer
+              imageUrl={generatedImage}
+              isLoading={isGenerating}
+              onDownload={handleDownload}
+              onRegenerate={generatedImage && !isGenerating ? handleRegenerate : undefined}
+            />
+          </div>
         </div>
-      </div>
-    </main>
+
+        {/* 底部提示 */}
+        <div className="mt-10 text-center">
+          <p className="text-sm text-gray-400">
+            By using our service, you agree to our{' '}
+            <button className="text-blue-500 hover:text-blue-600 underline">Terms of Service</button>
+            {' '}and{' '}
+            <button className="text-blue-500 hover:text-blue-600 underline">Privacy Policy</button>
+          </p>
+        </div>
+      </main>
+
+      {/* 登录提示弹窗 */}
+      {showLoginModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-3xl">🔐</span>
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">Login Required</h3>
+              <p className="text-gray-600 mb-6">
+                Please login to generate avatars and track your credits
+              </p>
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={() => setShowLoginModal(false)}>
+                  Cancel
+                </Button>
+                <Button variant="primary" onClick={handleLogin}>
+                  Login
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 次数不足弹窗 */}
+      {showCreditsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-3xl">⚠️</span>
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">Credits Ran Out</h3>
+              <p className="text-gray-600 mb-6">
+                You have no credits remaining. Upgrade to Premium for unlimited generations!
+              </p>
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={() => setShowCreditsModal(false)}>
+                  Later
+                </Button>
+                <Button variant="primary" onClick={() => window.location.href = '/pricing'}>
+                  Upgrade Now
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

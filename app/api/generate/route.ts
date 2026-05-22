@@ -1,40 +1,282 @@
 import { NextResponse } from 'next/server';
-import Replicate from 'replicate';
+import { generateCartoonAvatar } from '@/lib/minimax';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { CartoonStyle, GenerateRequest, ApiResponse, GenerateResponseData } from '@/lib/types';
+import { ERROR_MESSAGES } from '@/lib/constants';
 
-// 1. 初始化 Replicate 客户端
-const replicate = new Replicate({
-  auth: process.env.REPLICATE_API_TOKEN, // 确保你的 .env.local 里配置了这个 Token
-});
+/**
+ * POST /api/generate
+ * 生成卡通头像API
+ *
+ * 功能：
+ * 1. 验证用户登录状态
+ * 2. 检查用户剩余次数
+ * 3. 调用MiniMax API生成图片（仅在成功后才扣减次数）
+ * 4. 保存生成记录到历史
+ */
+export async function POST(request: Request) {
+  let requestId = Math.random().toString(36).substring(7);
+  console.log(`[Generate API ${requestId}] Starting request`);
 
-// 2. 定义 POST 请求处理函数
-export async function POST(req: Request) {
   try {
-    // 3. 获取前端传来的数据 (图片 URL)
-    const { image } = await req.json();
+    // ========== 1. 创建Supabase客户端 ==========
+    const supabase = await createClient();
+    const adminClient = createAdminClient();
 
-    if (!image) {
-      return NextResponse.json({ error: 'No image provided' }, { status: 400 });
+    // ========== 2. 验证用户认证 ==========
+    console.log(`[Generate API ${requestId}] Step 1: Verifying user authentication`);
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError) {
+      console.error(`[Generate API ${requestId}] Auth error:`, authError);
+    }
+    
+    if (!user) {
+      console.log(`[Generate API ${requestId}] No authenticated user found`);
+      return NextResponse.json<ApiResponse<GenerateResponseData>>(
+        { success: false, error: 'Please login first' },
+        { status: 401 }
+      );
+    }
+    console.log(`[Generate API ${requestId}] User authenticated:`, user.id);
+
+    // ========== 3. 获取并检查用户资料 ==========
+    console.log(`[Generate API ${requestId}] Step 2: Fetching user profile`);
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError) {
+      console.error(`[Generate API ${requestId}] Profile fetch error:`, profileError);
     }
 
-    // 4. 调用 Replicate AI 模型 (这里用的是 ToonYou 模型作为例子)
-    // 你可以换成你喜欢的任何模型
-    const output = await replicate.run(
-      "lucataco/toonyou:981a6d4d57316369467358822299262543643051841299055397026010249913", 
-      {
-        input: {
-          image: image, // 传入图片
-          steps: 20,    // 生成步数
-          prompt: "cartoon style, disney style, high quality" // 提示词
+    if (!profile) {
+      console.log(`[Generate API ${requestId}] Profile not found for user:`, user.id);
+      return NextResponse.json<ApiResponse<GenerateResponseData>>(
+        { success: false, error: 'User profile not found' },
+        { status: 404 }
+      );
+    }
+    console.log(`[Generate API ${requestId}] Profile found, credits:`, profile.credits, 'is_premium:', profile.is_premium);
+
+    // ========== 4. 检查用户次数（Premium用户无限次） ==========
+    if (!profile.is_premium && profile.credits <= 0) {
+      console.log(`[Generate API ${requestId}] User has no credits remaining`);
+      return NextResponse.json<ApiResponse<GenerateResponseData>>(
+        { success: false, error: 'Insufficient credits. Please upgrade your plan.' },
+        { status: 403 }
+      );
+    }
+
+    // ========== 5. 解析请求体 ==========
+    console.log(`[Generate API ${requestId}] Step 3: Parsing request body`);
+    let body: GenerateRequest;
+    try {
+      body = await request.json();
+      console.log(`[Generate API ${requestId}] Request body parsed, image length:`, body.image?.length, 'style:', body.style);
+    } catch (parseError) {
+      console.error(`[Generate API ${requestId}] JSON parse error:`, parseError);
+      return NextResponse.json<ApiResponse<GenerateResponseData>>(
+        { success: false, error: 'Invalid request format' },
+        { status: 400 }
+      );
+    }
+
+    // ========== 6. 参数校验 ==========
+    if (!body.image) {
+      console.log(`[Generate API ${requestId}] No image provided in request`);
+      return NextResponse.json<ApiResponse<GenerateResponseData>>(
+        { success: false, error: ERROR_MESSAGES.NO_IMAGE },
+        { status: 400 }
+      );
+    }
+
+    if (!body.style) {
+      console.log(`[Generate API ${requestId}] No style provided in request`);
+      return NextResponse.json<ApiResponse<GenerateResponseData>>(
+        { success: false, error: ERROR_MESSAGES.NO_STYLE },
+        { status: 400 }
+      );
+    }
+
+    // 验证风格值（13套标准化风格）
+    const validStyles: CartoonStyle[] = [
+      'pixar_3d_cartoon',
+      'american_retro_cartoon',
+      'cyberpunk_neon',
+      'minimal_illustration',
+      'japanese_anime',
+      'korean_soft_portrait',
+      'japanese_watercolor',
+      'gothic_dark',
+      'vintage_pixel',
+      'oil_painting',
+      'steampunk_vintage',
+      'chibi_q_version',
+      'street_sport',
+    ];
+    if (!validStyles.includes(body.style)) {
+      console.log(`[Generate API ${requestId}] Invalid style:`, body.style);
+      return NextResponse.json<ApiResponse<GenerateResponseData>>(
+        { success: false, error: 'Invalid style. Please select a valid style.' },
+        { status: 400 }
+      );
+    }
+
+    // ========== 7. 读取动态扣点配置 ==========
+    console.log(`[Generate API ${requestId}] Step 4: Reading credits_per_generation setting`);
+    let creditsToDeduct = 1; // 默认值
+    try {
+      const { data: settingData, error: settingError } = await adminClient
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'credits_per_generation')
+        .single();
+      
+      if (settingError) {
+        console.error(`[Generate API ${requestId}] Failed to read credits_per_generation:`, settingError);
+      } else if (settingData?.value) {
+        creditsToDeduct = typeof settingData.value === 'number' ? settingData.value : parseInt(String(settingData.value), 10) || 1;
+        console.log(`[Generate API ${requestId}] credits_per_generation:`, creditsToDeduct);
+      }
+    } catch (err) {
+      console.error(`[Generate API ${requestId}] Error reading credits_per_generation:`, err);
+      creditsToDeduct = 1; // 容错：读取失败时使用默认值
+    }
+
+    // ========== 8. 调用MiniMax API生成图片 ==========
+    console.log(`[Generate API ${requestId}] Step 5: Calling MiniMax API`);
+    
+    // 读取用户可选参数
+    const userFaceSimilarity = body.faceSimilarity;
+    const userStyleStrength = body.styleStrength;
+    const userFidelity = body.fidelity;
+    
+    if (userFaceSimilarity !== undefined) {
+      const clampedSimilarity = Math.max(0.5, Math.min(1.0, userFaceSimilarity));
+      console.log(`[Generate API ${requestId}] User provided faceSimilarity: ${userFaceSimilarity}, clamped to: ${clampedSimilarity}`);
+    }
+    
+    if (userStyleStrength !== undefined) {
+      const clampedStyleStrength = Math.max(0, Math.min(1, userStyleStrength));
+      console.log(`[Generate API ${requestId}] User provided styleStrength: ${userStyleStrength}, clamped to: ${clampedStyleStrength}`);
+    }
+    
+    if (userFidelity !== undefined) {
+      const clampedFidelity = Math.max(0, Math.min(1, userFidelity));
+      console.log(`[Generate API ${requestId}] User provided fidelity: ${userFidelity}, clamped to: ${clampedFidelity}`);
+    }
+    
+    const result = await generateCartoonAvatar(
+      body.image,
+      body.style,
+      userFaceSimilarity,
+      userStyleStrength,
+      userFidelity
+    );
+    console.log(`[Generate API ${requestId}] MiniMax result:`, JSON.stringify(result).substring(0, 200));
+
+    // ========== 9. 仅在API成功时扣减次数并保存记录 ==========
+    if (result.success && result.data) {
+      console.log(`[Generate API ${requestId}] Generation successful, processing credits and saving record`);
+
+      // 9.1 扣减用户次数（非Premium用户）- 仅在成功后执行，使用动态值
+      if (!profile.is_premium) {
+        console.log(`[Generate API ${requestId}] Decrementing ${creditsToDeduct} credits from:`, profile.credits);
+        const { error: updateError } = await adminClient
+          .from('profiles')
+          .update({ credits: profile.credits - creditsToDeduct })
+          .eq('id', user.id);
+
+        if (updateError) {
+          console.error(`[Generate API ${requestId}] Failed to decrement credits:`, updateError);
+          // 不影响生成流程，仅记录错误
+        } else {
+          console.log(`[Generate API ${requestId}] Credits decremented successfully, new credits:`, profile.credits - creditsToDeduct);
         }
       }
-    );
 
-    // 5. 将 AI 生成的图片 URL 返回给前端
-    // output 通常是一个字符串数组，取第一个即可
-    return NextResponse.json({ result: output[0] });
+      // 8.2 保存生成记录
+      const { error: insertError } = await adminClient
+        .from('generations')
+        .insert({
+          user_id: user.id,
+          original_image: body.image.substring(0, 500) + '...', // 仅保存缩略版本
+          generated_image: result.data.imageUrl,
+          style: body.style,
+        });
 
+      if (insertError) {
+        console.error(`[Generate API ${requestId}] Failed to save generation record:`, insertError);
+        // 不影响生成流程，仅记录错误
+      } else {
+        console.log(`[Generate API ${requestId}] Generation record saved successfully`);
+      }
+
+      // 8.3 更新风格使用统计
+      const today = new Date().toISOString().split('T')[0];
+      const { error: statsError } = await adminClient
+        .from('style_usage_stats')
+        .upsert(
+          {
+            style_name: body.style,
+            stat_date: today,
+            usage_count: 1,
+          },
+          {
+            onConflict: 'style_name,stat_date',
+            ignoreDuplicates: false,
+          }
+        );
+
+      if (statsError) {
+        console.error(`[Generate API ${requestId}] Failed to update style stats:`, statsError);
+        // 不影响生成流程，仅记录错误
+      } else {
+        console.log(`[Generate API ${requestId}] Style usage stats updated for:`, body.style, 'on', today);
+      }
+
+      return NextResponse.json<ApiResponse<GenerateResponseData>>(result, { status: 200 });
+    } else {
+      // API调用失败 - 不扣减次数
+      console.log(`[Generate API ${requestId}] Generation failed, NOT decrementing credits`);
+      const errorMessage = result.error || ERROR_MESSAGES.GENERATION_FAILED;
+      console.log(`[Generate API ${requestId}] Error message:`, errorMessage);
+      
+      return NextResponse.json<ApiResponse<GenerateResponseData>>(
+        { success: false, error: errorMessage },
+        { status: 500 }
+      );
+    }
   } catch (error) {
-    console.error('AI Error:', error);
-    return NextResponse.json({ error: 'Failed to generate image' }, { status: 500 });
+    // 捕获所有意外错误
+    console.error(`[Generate API ${requestId}] Unexpected error:`);
+    console.error(`[Generate API ${requestId}] Error name:`, error instanceof Error ? error.name : 'Unknown');
+    console.error(`[Generate API ${requestId}] Error message:`, error instanceof Error ? error.message : String(error));
+    console.error(`[Generate API ${requestId}] Error stack:`, error instanceof Error ? error.stack : 'No stack trace');
+    
+    return NextResponse.json<ApiResponse<GenerateResponseData>>(
+      { success: false, error: ERROR_MESSAGES.API_ERROR },
+      { status: 500 }
+    );
   }
+}
+
+/**
+ * GET /api/generate
+ * API健康检查
+ */
+export async function GET() {
+  console.log('[Generate API] Health check requested');
+  return NextResponse.json({
+    status: 'ok',
+    message: 'AI Cartoon Avatar Generator API',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      POST: '/api/generate - Generate cartoon avatar',
+      GET: '/api/generate - API health check',
+    },
+  });
 }
