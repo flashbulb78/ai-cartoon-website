@@ -183,11 +183,10 @@ CREATE TRIGGER update_pricing_packages_updated_at
 -- =====================================================
 INSERT INTO public.pricing_packages (name, credits, price, currency, description, is_active, is_highlighted, sort_order)
 VALUES
-    ('Basic', 10, 4.99, 'USD', 'Best for trying styles', TRUE, FALSE, 1),
-    ('Popular', 60, 14.99, 'USD', 'Most popular – best value', TRUE, TRUE, 2),
-    ('Pro', 120, 24.99, 'USD', 'For frequent creators', TRUE, FALSE, 3),
-    ('Premium', 250, 39.99, 'USD', 'Best value – save 68%', TRUE, FALSE, 4),
-    ('Enterprise', 600, 79.99, 'USD', 'For power users & teams', TRUE, FALSE, 5)
+    ('Starter', 8, 1.49, 'USD', 'Perfect for getting started', TRUE, FALSE, 1),
+    ('Value', 30, 4.99, 'USD', 'Best for trying styles', TRUE, FALSE, 2),
+    ('Mid', 45, 6.99, 'USD', 'Great value – more savings', TRUE, TRUE, 3),
+    ('Premium', 60, 8.99, 'USD', 'Best value – save even more', TRUE, TRUE, 4)
 ON CONFLICT DO NOTHING;
 
 -- =====================================================

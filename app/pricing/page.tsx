@@ -162,7 +162,7 @@ export default function PricingPage() {
         {!isLoading && !error && (
           <>
             <div className="flex flex-wrap justify-center gap-6 lg:gap-8">
-              {packages.filter((pkg) => pkg.name !== 'Enterprise').map((pkg) => (
+              {packages.map((pkg) => (
                 <div
                   key={pkg.id}
                   className={`

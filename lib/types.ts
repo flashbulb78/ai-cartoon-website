@@ -78,6 +78,7 @@ export interface GenerateRequest {
   faceSimilarity?: number;  // 人脸相似度 (0.5-1.0), 可选，默认0.8
   styleStrength?: number;   // 风格强度 (0-1), 可选，默认0.4
   fidelity?: number;        // 还原度 (0-1), 可选，默认0.7
+  genderForce?: 'male' | 'female';  // 强制性别，可选
 }
 
 /**

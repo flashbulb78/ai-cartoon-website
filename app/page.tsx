@@ -45,6 +45,7 @@ export default function HomePage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showCreditsModal, setShowCreditsModal] = useState(false);
+  const [showRegenerateConfirmModal, setShowRegenerateConfirmModal] = useState(false);
   const [isCropping, setIsCropping] = useState(false);
 
   // ========== 生成参数状态（已上调人脸相似度基准权重）==========
@@ -53,6 +54,7 @@ export default function HomePage() {
   const [faceSimilarity, setFaceSimilarity] = useState<number>(0.9);
   const [styleStrength, setStyleStrength] = useState<number>(0.25);
   const [fidelity, setFidelity] = useState<number>(0.85);
+  const [genderForce, setGenderForce] = useState<'male' | 'female' | null>(null);
 
   // ========== 人脸裁剪 ==========
   const { cropFace, isLoading: isCropLoading } = useFaceCrop();
@@ -159,6 +161,7 @@ export default function HomePage() {
           faceSimilarity,
           styleStrength,
           fidelity,
+          genderForce,
         }),
       });
       
@@ -186,15 +189,15 @@ export default function HomePage() {
   }, [user, profile, isGenerating, selectedImage, selectedStyle, faceSimilarity, styleStrength, fidelity, decrementCredits]);
 
   /**
-   * 重新生成
+   * 重新生成 - 显示确认弹窗
    */
   const handleRegenerate = useCallback(() => {
     if (!isGenerating && !profile?.is_premium && profile && profile.credits <= 0) {
       setShowCreditsModal(true);
       return;
     }
-    handleGenerate();
-  }, [handleGenerate, profile]);
+    setShowRegenerateConfirmModal(true);
+  }, [isGenerating, profile]);
 
   /**
    * 下载完成回调
@@ -358,6 +361,53 @@ export default function HomePage() {
                 </div>
               )}
 
+              {/* 性别选择 */}
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 mb-2 text-center">Gender (Optional)</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setGenderForce(genderForce === 'male' ? null : 'male')}
+                    className={`
+                      flex-1 py-2.5 px-4 rounded-xl
+                      text-sm font-semibold
+                      transition-all duration-200
+                      flex items-center justify-center gap-2
+                      ${genderForce === 'male'
+                        ? 'bg-blue-500 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }
+                      active:scale-95
+                    `}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Male
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGenderForce(genderForce === 'female' ? null : 'female')}
+                    className={`
+                      flex-1 py-2.5 px-4 rounded-xl
+                      text-sm font-semibold
+                      transition-all duration-200
+                      flex items-center justify-center gap-2
+                      ${genderForce === 'female'
+                        ? 'bg-blue-500 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }
+                      active:scale-95
+                    `}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                    </svg>
+                    Female
+                  </button>
+                </div>
+              </div>
+
               {/* 生成按钮 */}
               <Button
                 onClick={handleGenerate}
@@ -491,6 +541,34 @@ export default function HomePage() {
                 </Button>
                 <Button variant="primary" onClick={() => window.location.href = '/pricing'}>
                   Upgrade Now
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 重新生成确认弹窗 */}
+      {showRegenerateConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-3xl">🔄</span>
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">Regenerate Avatar</h3>
+              <p className="text-gray-600 mb-6">
+                Regenerating will cost 1 credit. Do you want to continue?
+              </p>
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={() => setShowRegenerateConfirmModal(false)}>
+                  Cancel
+                </Button>
+                <Button variant="primary" onClick={() => {
+                  setShowRegenerateConfirmModal(false);
+                  handleGenerate();
+                }}>
+                  Continue (Costs 1 Credit)
                 </Button>
               </div>
             </div>

@@ -174,7 +174,8 @@ export async function POST(request: Request) {
       body.style,
       userFaceSimilarity,
       userStyleStrength,
-      userFidelity
+      userFidelity,
+      body.genderForce
     );
     console.log(`[Generate API ${requestId}] MiniMax result:`, JSON.stringify(result).substring(0, 200));
 
