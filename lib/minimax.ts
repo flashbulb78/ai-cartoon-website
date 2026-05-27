@@ -4,7 +4,7 @@
  * 包含错误处理、日志记录和Base64清理
  */
 
-import { CartoonStyle, ApiResponse, GenerateResponseData } from './types';
+import { CartoonStyle, ApiResponse, GenerateResponseData, FaceAnalysisResult } from './types';
 
 const MINIMAX_BASE_URL = process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1';
 const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY;
@@ -34,39 +34,20 @@ const FIDELITY = parseFloat(process.env.FIDELITY || '0.85');
  * 将我们的风格ID映射到MiniMax API接受的提示词
  */
 const STYLE_PROMPTS: Record<CartoonStyle, string> = {
-  pixar_3d_cartoon: '3D Pixar cartoon style, soft smooth rendering, clean texture, warm soft lighting, cute friendly 3D character, high detail, cinematic render. keep the EXACT same face, eyes, nose, mouth, face shape, skin tone, hair style from the reference image. Do NOT change race, skin color, hair, or facial features.',
-  american_retro_cartoon: 'American vintage cartoon style, bold clean outline, high saturation retro color, street fashion texture, classic western cartoon shading. keep the EXACT same face, eyes, nose, mouth, face shape, skin tone, hair style from the reference image. Do NOT change race, skin color, hair, or facial features.',
-  cyberpunk_neon: 'Cyberpunk futuristic portrait, neon glow light, dark tone background, tech texture, futuristic atmosphere, glowing edge detail. keep the EXACT same face, eyes, nose, mouth, face shape, skin tone, hair style from the reference image. Do NOT change race, skin color, hair, or facial features.',
-  minimal_illustration: 'Minimal clean line illustration, simple elegant color matching, flat design, high sense premium portrait, clean and neat texture. keep the EXACT same face, eyes, nose, mouth, face shape, skin tone, hair style from the reference image. Do NOT change race, skin color, hair, or facial features.',
-  japanese_anime: 'Premium Japanese anime style, bright clear eyes, soft gradient shading, youthful texture, clean comic line, vibrant anime color. keep the EXACT same face, eyes, nose, mouth, face shape, skin tone, hair style from the reference image. Do NOT change race, skin color, hair, or facial features.',
-  korean_soft_portrait: 'Korean webtoon style, delicate soft skin, gentle tone, smooth shading, elegant and fresh portrait, soft facial contour. keep the EXACT same face, eyes, nose, mouth, face shape, skin tone, hair style from the reference image. Do NOT change race, skin color, hair, or facial features.',
-  japanese_watercolor: 'Japanese watercolor texture, warm soft color, transparent watercolor layering, healing artistic atmosphere, faint paper texture. keep the EXACT same face, eyes, nose, mouth, face shape, skin tone, hair style from the reference image. Do NOT change race, skin color, hair, or facial features.',
-  gothic_dark: 'Dark gothic aesthetic, low saturation tone, mysterious atmosphere, elegant dark texture, subtle shadow detail, retro dark art. keep the EXACT same face, eyes, nose, mouth, face shape, skin tone, hair style from the reference image. Do NOT change race, skin color, hair, or facial features.',
-  vintage_pixel: '8-bit retro pixel art, classic game nostalgic style, clear pixel outline, retro color palette, vintage game texture. keep the EXACT same face, eyes, nose, mouth, face shape, skin tone, hair style from the reference image. Do NOT change race, skin color, hair, or facial features.',
-  oil_painting: 'Classic oil painting texture, artistic brush stroke, layered color, high-end art portrait, canvas texture, soft ambient light. keep the EXACT same face, eyes, nose, mouth, face shape, skin tone, hair style from the reference image. Do NOT change race, skin color, hair, or facial features.',
-  steampunk_vintage: 'Steampunk retro style, mechanical texture, metal vintage tone, retro gear detail, old industrial art atmosphere. keep the EXACT same face, eyes, nose, mouth, face shape, skin tone, hair style from the reference image. Do NOT change race, skin color, hair, or facial features.',
-  chibi_q_version: 'Super cute chibi style, proportional big head, lovely soft feature, warm color, cartoon cute texture, suitable for couple avatar. keep the EXACT same face, eyes, nose, mouth, face shape, skin tone, hair style from the reference image. Do NOT change race, skin color, hair, or facial features.',
-  street_sport: 'Modern street fashion style, youthful sports vibe, trendy clothing texture, energetic tone, casual street portrait. keep the EXACT same face, eyes, nose, mouth, face shape, skin tone, hair style from the reference image. Do NOT change race, skin color, hair, or facial features.',
+  pixar_3d_cartoon: '3D Pixar cartoon style, soft smooth rendering, clean texture, warm soft lighting, cute friendly 3D character, high detail, cinematic render.',
+  american_retro_cartoon: 'American vintage cartoon style, bold clean outline, high saturation retro color, street fashion texture, classic western cartoon shading.',
+  cyberpunk_neon: 'Cyberpunk futuristic portrait, neon glow light, dark tone background, tech texture, futuristic atmosphere, glowing edge detail.',
+  minimal_illustration: 'Minimal clean line illustration, simple elegant color matching, flat design, high sense premium portrait, clean and neat texture.',
+  japanese_anime: 'Premium Japanese anime style, bright clear eyes, soft gradient shading, youthful texture, clean comic line, vibrant anime color.',
+  korean_soft_portrait: 'Korean webtoon style, delicate soft skin, gentle tone, smooth shading, elegant and fresh portrait, soft facial contour.',
+  japanese_watercolor: 'Japanese watercolor texture, warm soft color, transparent watercolor layering, healing artistic atmosphere, faint paper texture.',
+  gothic_dark: 'Dark gothic aesthetic, low saturation tone, mysterious atmosphere, elegant dark texture, subtle shadow detail, retro dark art.',
+  vintage_pixel: '8-bit retro pixel art, classic game nostalgic style, clear pixel outline, retro color palette, vintage game texture.',
+  oil_painting: 'Classic oil painting texture, artistic brush stroke, layered color, high-end art portrait, canvas texture, soft ambient light.',
+  steampunk_vintage: 'Steampunk retro style, mechanical texture, metal vintage tone, retro gear detail, old industrial art atmosphere.',
+  chibi_q_version: 'Super cute chibi style, proportional big head, lovely soft feature, warm color, cartoon cute texture, suitable for couple avatar.',
+  street_sport: 'Modern street fashion style, youthful sports vibe, trendy clothing texture, energetic tone, casual street portrait.',
 };
-
-/**
- * 全局正向提示词 - 精简版，控制在1300字符内
- * 最高优先级：精准复刻五官轮廓（眉眼口鼻脸型）
- * 锁定性别、年龄、人种、发型、配饰
- */
-const FACE_PRESERVATION_PROMPT = `CRITICAL: Preserve the subject's exact race and ethnicity from the original photo. If the subject is White, generate a White avatar. If the subject is Black, generate a Black avatar. If the subject is Asian, generate an Asian avatar. Do NOT change the subject's race or ethnicity under any circumstances. EXACT facial features required - eyebrows shape/direction, eyes size/shape/spacing/pupils, nose bridge/width/tip, mouth shape/lips fullness/philtrum, chin shape/jawline width, cheekbone structure, face oval/round/square shape. LOCK: gender, age, race/skin color. DO NOT alter any facial feature.`.trim();
-
-/**
- * 全局负向提示词 - 精简版，控制在1300字符内
- * 禁止换脸、篡改五官、配件丢失、性别/年龄/人种变化
- */
-const NEGATIVE_PROMPT = `FORBIDDEN: change eyes shape/size/spacing/pupils, alter nose bridge/width/tip, distort mouth shape/lips/philtrum, modify chin/jaw/cheekbones, gender swap, age change (child/adult/elder), race/skin color change. MUST: keep exact original facial structure, recognizable as same person.`.trim();
-
-/**
- * MiniMax指定负向提示词
- * 禁止换脸、肤色变化、加减配饰、五官变形
- */
-const MINIMAX_NEGATIVE_PROMPT = `different person, changing face, changing skin color, changing hair, different eyes, different nose, different mouth, anime face, generic face, whitewashed face, plastic surgery face`;
 
 /**
  * 清理Base64图片字符串
@@ -121,7 +102,8 @@ export async function generateCartoonAvatar(
   faceSimilarity?: number,
   styleStrength?: number,
   fidelity?: number,
-  genderForce?: 'male' | 'female'
+  genderForce?: 'male' | 'female',
+  faceAnalysis?: FaceAnalysisResult
 ): Promise<ApiResponse<GenerateResponseData>> {
   console.log('[MiniMax] Starting avatar generation request');
   console.log('[MiniMax] Style:', style);
@@ -144,27 +126,58 @@ export async function generateCartoonAvatar(
     console.log('[MiniMax] Cleaned image starts with:', cleanImage.substring(0, 50));
     console.log('[MiniMax] Cleaned image base64 length:', cleanImage.length);
 
-    // 3. 构建增强提示词 - 人脸保留优先
+    // 3. 构建提示词
     const stylePrompt = STYLE_PROMPTS[style] || STYLE_PROMPTS.japanese_anime;
     
-    // 添加性别强制提示词
+    // 从faceAnalysis提取信息
+    const colorAttributes = faceAnalysis?.colorAttributes;
+    
+    // 性别控制（最高优先级）
     let genderPrompt = '';
-    if (genderForce === 'male') {
-      genderPrompt = ' MUST be male, male face only, masculine features.';
-    } else if (genderForce === 'female') {
-      genderPrompt = ' MUST be female, female face only, feminine features.';
+    if (genderForce) {
+      genderPrompt = ` MUST be ${genderForce}, ${genderForce} face only, ${genderForce === 'male' ? 'masculine' : 'feminine'} features.`;
+    } else if (faceAnalysis?.gender) {
+      genderPrompt = ` Preserve original gender: ${faceAnalysis.gender}.`;
     }
     
-    // 颜色匹配指令：自动从原图检测并保持一致
-    const colorPrompt = ' Automatically detect and preserve the EXACT hair color, eyebrow color, and eye color from the original image. Match these colors exactly in the generated avatar. Do NOT change or alter these colors.';
+    // 人种保留
+    let ethnicityPrompt = '';
+    if (faceAnalysis?.ethnicity && faceAnalysis.ethnicity !== 'unknown') {
+      ethnicityPrompt = ` Maintain ${faceAnalysis.ethnicity} ethnic appearance.`;
+    }
     
-    // 构建精简提示词：总长度控制在1300字符内
-    const prompt = `${FACE_PRESERVATION_PROMPT}${genderPrompt}${colorPrompt} Style: ${stylePrompt} Transform: ${Math.round((1 - (styleStrength ?? STYLE_STRENGTH)) * 100)}% only. Same person, head-to-shoulder.`.trim();
+    // 颜色保留
+    let colorPrompt = '';
+    if (colorAttributes) {
+      if (colorAttributes.skinTone !== 'unknown') {
+        colorPrompt += ` Preserve skin tone: ${colorAttributes.skinTone} (${colorAttributes.skinColor}).`;
+      }
+      if (colorAttributes.hairColor !== 'unknown') {
+        colorPrompt += ` Preserve hair color: ${colorAttributes.hairColor} (${colorAttributes.hairColorHex}).`;
+      }
+      if (colorAttributes.eyeColor !== 'unknown') {
+        colorPrompt += ` Preserve eye color: ${colorAttributes.eyeColor} (${colorAttributes.eyeColorHex}).`;
+      }
+    }
     
-    // 负面提示词帮助避免随机脸
-    const negativePrompt = NEGATIVE_PROMPT;
+    // 头发特征
+    let hairPrompt = '';
+    if (faceAnalysis) {
+      if (faceAnalysis.hairLength !== 'unknown' && faceAnalysis.hairLength !== 'bald') {
+        hairPrompt += ` Hair length: ${faceAnalysis.hairLength}.`;
+      }
+      if (faceAnalysis.hairShape !== 'unknown') {
+        hairPrompt += ` Hair texture: ${faceAnalysis.hairShape}.`;
+      }
+      if (faceAnalysis.hairBangs && faceAnalysis.hairBangsStyle !== 'unknown') {
+        hairPrompt += ` Bangs style: ${faceAnalysis.hairBangsStyle}.`;
+      }
+    }
     
-    console.log('[MiniMax] Generated prompt:', prompt.substring(0, 100) + '...');
+    // 构建完整提示词
+    const prompt = `${genderPrompt}${ethnicityPrompt}${colorPrompt}${hairPrompt} Style: ${stylePrompt} Transform: ${Math.round((1 - (styleStrength ?? STYLE_STRENGTH)) * 100)}% only.`.trim();
+    
+    console.log('[MiniMax] Generated prompt:', prompt.substring(0, 150) + '...');
     console.log('[MiniMax] Face similarity strength:', FACE_SIMILARITY_STRENGTH);
     console.log('[MiniMax] Style strength:', STYLE_STRENGTH);
 
@@ -204,7 +217,7 @@ export async function generateCartoonAvatar(
       style_strength: styleStrength ?? STYLE_STRENGTH,
       denoising_strength: 0.35,
       face_preservation_weight: 0.95,
-      negative_prompt: MINIMAX_NEGATIVE_PROMPT,
+      negative_prompt: '',
       auto_beauty: false,
       face_reshape: false,
       auto_face_correction: false,

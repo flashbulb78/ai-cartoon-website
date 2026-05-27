@@ -79,6 +79,81 @@ export interface GenerateRequest {
   styleStrength?: number;   // 风格强度 (0-1), 可选，默认0.4
   fidelity?: number;        // 还原度 (0-1), 可选，默认0.7
   genderForce?: 'male' | 'female';  // 强制性别，可选
+  faceAnalysis?: FaceAnalysisResult;  // 人脸分析结果，可选
+}
+
+/**
+ * 颜色属性（肤色、发色、眼睛颜色）
+ */
+export interface ColorAttributes {
+  skinTone: 'light' | 'medium' | 'dark' | 'unknown';
+  skinColor: string; // hex
+  hairColor: 'black' | 'brown' | 'blonde' | 'red' | 'gray' | 'white' | 'unknown';
+  hairColorHex: string;
+  eyeColor: 'brown' | 'blue' | 'green' | 'gray' | 'black' | 'unknown';
+  eyeColorHex: string;
+}
+
+/**
+ * 人种分类
+ */
+export type Ethnicity = 'caucasian' | 'asian' | 'african' | 'indian' | 'latin_american' | 'middle_eastern' | 'unknown';
+
+/**
+ * 头发形状
+ */
+export type HairShape = 'straight' | 'wavy' | 'curly' | 'coily' | 'unknown';
+
+/**
+ * 头发长度
+ */
+export type HairLength = 'bald' | 'very_short' | 'short' | 'medium' | 'long' | 'very_long' | 'unknown';
+
+/**
+ * 全面人脸分析结果
+ */
+export interface FaceAnalysisResult {
+  // 基本信息
+  faceDetected: boolean;
+  faceCount: number;  // 检测到的人数
+  
+  // 性别相关
+  gender: 'male' | 'female' | null;
+  genderConfidence: number; // 0-1
+  
+  // 人种/肤色
+  ethnicity: Ethnicity;
+  ethnicityConfidence: number;
+  
+  // 颜色属性
+  colorAttributes: ColorAttributes;
+  
+  // 头发特征
+  hairShape: HairShape;
+  hairLength: HairLength;
+  hairBangs: boolean; // 是否有刘海
+  hairBangsStyle: 'none' | 'side' | 'center' | 'unknown';
+  
+  // 面部特征（用于prompt描述）
+  facialFeatures: {
+    faceShape: 'oval' | 'round' | 'square' | 'heart' | 'oblong' | 'unknown';
+    noseShape: 'straight' | 'curved' | 'round' | 'wide' | 'unknown';
+    eyeShape: 'almond' | 'round' | 'hooded' | 'upturned' | 'downturned' | 'unknown';
+    lipShape: 'full' | 'thin' | 'medium' | 'unknown';
+    jawline: 'soft' | 'sharp' | 'medium' | 'unknown';
+  };
+
+  // 配饰属性（来自腾讯云API）
+  accessories?: {
+    hasGlasses: boolean;
+    glassesType: 'none' | 'normal' | 'sunglasses' | 'myopia' | 'unknown';
+    hasBeard: boolean;
+    beardLength: 'none' | 'short' | 'medium' | 'long' | 'unknown';
+    hasHat: boolean;
+    hatColor: string | null;
+    hasMask: boolean;
+    hasOpenEyes: boolean;
+  };
 }
 
 /**

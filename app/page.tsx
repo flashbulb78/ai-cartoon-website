@@ -28,9 +28,10 @@ import { ResultViewer } from '@/components/ResultViewer';
 import { GenerationParameters } from '@/components/GenerationParameters';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
-import { CartoonStyle, ApiResponse, GenerateResponseData, STYLE_DEFAULT_PARAMS } from '@/lib/types';
+import { CartoonStyle, ApiResponse, GenerateResponseData, STYLE_DEFAULT_PARAMS, FaceAnalysisResult } from '@/lib/types';
 import { DEFAULT_STYLE, ERROR_MESSAGES } from '@/lib/constants';
 import { useFaceCrop } from '@/hooks/useFaceCrop';
+import { analyzeFace } from '@/lib/faceAnalysis';
 
 export default function HomePage() {
   // ========== 认证状态 ==========
@@ -55,6 +56,8 @@ export default function HomePage() {
   const [styleStrength, setStyleStrength] = useState<number>(0.25);
   const [fidelity, setFidelity] = useState<number>(0.85);
   const [genderForce, setGenderForce] = useState<'male' | 'female' | null>(null);
+  const [detectedGender, setDetectedGender] = useState<'male' | 'female' | null>(null);
+  const [faceAnalysis, setFaceAnalysis] = useState<FaceAnalysisResult | null>(null);
 
   // ========== 人脸裁剪 ==========
   const { cropFace, isLoading: isCropLoading } = useFaceCrop();
@@ -72,18 +75,31 @@ export default function HomePage() {
       setSelectedImage(null);
       setError(null);
       setSuccess(null);
+      setFaceAnalysis(null);
       return;
     }
 
     setIsCropping(true);
     setError(null);
     setSuccess(null);
+    setFaceAnalysis(null);
 
     try {
       // 自动裁剪人脸
       const result = await cropFace(base64);
       if (result.success && result.croppedImage) {
         setSelectedImage(result.croppedImage);
+        
+        // 如果检测到性别，仅记录，不自动设置按钮
+        if (result.gender) {
+          setDetectedGender(result.gender);
+          console.log('[Page] Detected gender:', result.gender);
+        }
+        
+        // 全面人脸分析（包含肤色、发色、眼睛颜色、人种、头发特征等）
+        const analysis = await analyzeFace(result.croppedImage);
+        setFaceAnalysis(analysis);
+        console.log('[Page] Face analysis result:', analysis);
       } else {
         setError(result.error || 'Face cropping failed');
         setSelectedImage(null);
@@ -162,6 +178,7 @@ export default function HomePage() {
           styleStrength,
           fidelity,
           genderForce,
+          faceAnalysis,
         }),
       });
       
@@ -186,7 +203,7 @@ export default function HomePage() {
     } finally {
       setIsGenerating(false);
     }
-  }, [user, profile, isGenerating, selectedImage, selectedStyle, faceSimilarity, styleStrength, fidelity, decrementCredits]);
+  }, [user, profile, isGenerating, selectedImage, selectedStyle, faceSimilarity, styleStrength, fidelity, genderForce, faceAnalysis, cropFace, decrementCredits]);
 
   /**
    * 重新生成 - 显示确认弹窗

@@ -16,6 +16,7 @@ interface FaceCropResult {
   success: boolean;
   croppedImage?: string;
   error?: string;
+  gender?: 'male' | 'female';
 }
 
 interface FaceBox {
@@ -65,8 +66,13 @@ export function useFaceCrop(): UseFaceCropReturn {
       await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
       console.log('[FaceCrop] tiny_face_detector loaded successfully');
 
+      // 加载face_landmark_68_model用于性别检测
+      console.log('[FaceCrop] Loading face_landmark_68_model...');
+      await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+      console.log('[FaceCrop] face_landmark_68_model loaded successfully');
+
       isModelLoadedRef.current = true;
-      console.log('[FaceCrop] Model loaded successfully');
+      console.log('[FaceCrop] All models loaded successfully');
       return true;
     } catch (err) {
       console.error('[FaceCrop] Failed to load model:', err);
@@ -130,6 +136,22 @@ export function useFaceCrop(): UseFaceCropReturn {
       const box = detection.box;
       console.log('[FaceCrop] Face detected, box:', box);
 
+      // 使用faceLandmark68Net检测68个特征点
+      let detectedGender: 'male' | 'female' | undefined;
+      try {
+        console.log('[FaceCrop] Detecting face landmarks...');
+        // detectFaceLandmarks uses full 68-point model
+        const landmarks = await faceapi.detectFaceLandmarks(img);
+        
+        if (landmarks) {
+          detectedGender = detectGenderFromLandmarks(landmarks as faceapi.FaceLandmarks68);
+          console.log('[FaceCrop] Detected gender:', detectedGender);
+        }
+      } catch (landmarkError) {
+        console.warn('[FaceCrop] Landmark detection failed:', landmarkError);
+        detectedGender = undefined;
+      }
+
       // 计算扩大后的人脸区域（保持正方形）
       const expandedBox = expandBoxToSquare(box, img.width, img.height, MARGIN);
       
@@ -164,7 +186,7 @@ export function useFaceCrop(): UseFaceCropReturn {
       const croppedImageBase64 = canvas.toDataURL('image/jpeg', 0.95);
       
       console.log('[FaceCrop] Face cropped successfully');
-      return { success: true, croppedImage: croppedImageBase64 };
+      return { success: true, croppedImage: croppedImageBase64, gender: detectedGender };
     } catch (err) {
       console.error('[FaceCrop] Detection error:', err);
       return { 
@@ -225,4 +247,87 @@ function expandBoxToSquare(box: FaceBox, imageWidth: number, imageHeight: number
   if (newY + newHeight > imageHeight) newY = imageHeight - newHeight;
   
   return { x: newX, y: newY, width: newWidth, height: newHeight };
+}
+
+/**
+ * 根据人脸68个特征点判断性别
+ *
+ * 关键特征分析：
+ * - 眉毛宽度和高度（男性通常更粗更低）
+ * - 下颌宽度（男性通常更宽）
+ * - 鼻子大小（男性通常更大）
+ * - 眼睛间距（女性通常更宽）
+ */
+function detectGenderFromLandmarks(landmarks: faceapi.FaceLandmarks68): 'male' | 'female' {
+  const positions = landmarks.positions;
+  
+  // 计算面部特征比例
+  // 眉毛位置（索引0-16是轮廓点）
+  
+  // 计算左眉中心 (索引17-21)
+  const leftEyebrow = positions.slice(17, 22);
+  const leftEyebrowCenter = averageY(leftEyebrow);
+  
+  // 计算右眉中心 (索引22-26)
+  const rightEyebrow = positions.slice(22, 27);
+  const rightEyebrowCenter = averageY(rightEyebrow);
+  
+  // 计算眼睛中心 (索引36-41左眼, 42-47右眼)
+  const leftEye = positions.slice(36, 42);
+  const rightEye = positions.slice(42, 48);
+  const leftEyeCenter = averageY(leftEye);
+  const rightEyeCenter = averageY(rightEye);
+  
+  // 计算眉毛和眼睛的距离比例
+  const eyebrowEyeDistance = ((leftEyebrowCenter + rightEyebrowCenter) / 2) - ((leftEyeCenter + rightEyeCenter) / 2);
+  
+  // 计算鼻尖位置（索引30）
+  const noseTip = positions[30];
+  
+  // 计算下巴底部位置（索引8）
+  const chinBottom = positions[8];
+  
+  // 计算眼睛间距
+  const leftEyeOuter = positions[36];
+  const rightEyeOuter = positions[45];
+  const eyeDistance = Math.abs(rightEyeOuter.x - leftEyeOuter.x);
+  
+  // 计算面部宽度（颧骨位置，索引0和16）
+  const faceWidth = Math.abs(positions[16].x - positions[0].x);
+  
+  // 计算下颌宽度（索引4-6和10-12之间）
+  const jawLeft = positions[4];
+  const jawRight = positions[12];
+  const jawWidth = Math.abs(jawRight.x - jawLeft.x);
+  
+  // 下颌宽度与面部宽度比例（男性下颌通常更宽）
+  const jawRatio = jawWidth / faceWidth;
+  
+  // 眉眼距与眼距比例（女性通常眉眼距更大）
+  const eyebrowEyeRatio = eyebrowEyeDistance / eyeDistance;
+  
+  console.log('[GenderDetection] jawRatio:', jawRatio, 'eyebrowEyeRatio:', eyebrowEyeRatio);
+  
+  // 使用多个特征判断性别
+  // 男性特征：下颌宽、眉眼距小
+  // 女性特征：下颌窄、眉眼距大
+  
+  if (jawRatio > 0.55 && eyebrowEyeRatio < 0.8) {
+    return 'male';
+  } else if (jawRatio < 0.5 && eyebrowEyeRatio > 0.9) {
+    return 'female';
+  }
+  
+  // 综合判断
+  const maleScore = (jawRatio > 0.52 ? 1 : 0) + (eyebrowEyeRatio < 0.85 ? 1 : 0);
+  
+  return maleScore >= 1 ? 'male' : 'female';
+}
+
+/**
+ * 计算平均Y坐标
+ */
+function averageY(points: { x: number; y: number }[]): number {
+  const sum = points.reduce((acc, p) => acc + p.y, 0);
+  return sum / points.length;
 }

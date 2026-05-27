@@ -5,12 +5,15 @@
  * 图片上传组件
  * 支持拖拽上传、点击选择、实时预览、图片删除
  * 适配移动端和桌面端
+ * 
+ * Privacy consent required before uploading face images
  */
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { formatFileSize } from '@/lib/utils';
 import { ALLOWED_IMAGE_TYPES } from '@/lib/constants';
+import { PrivacyConsentModal } from './PrivacyConsentModal';
 
 interface ImageUploaderProps {
   /** 图片变化回调 */
@@ -22,6 +25,11 @@ interface ImageUploaderProps {
 export function ImageUploader({ onImageChange, disabled }: ImageUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const { state, handleFileSelect, handleDrop, handleClear, isUploading } = useImageUpload();
+  
+  // Privacy consent state
+  const [showConsentModal, setShowConsentModal] = useState(false);
+  const [hasConsented, setHasConsented] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   /**
    * 当状态变化时通知父组件
@@ -36,20 +44,48 @@ export function ImageUploader({ onImageChange, disabled }: ImageUploaderProps) {
   );
 
   /**
-   * 处理文件选择
+   * 处理文件选择 - 触发隐私同意
    */
   const onInputChange = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
+    (event: React.ChangeEvent<HTMLInputElement>) => {
       const files = event.target.files;
       if (files && files.length > 0) {
-        const base64 = await handleFileSelect(files[0]);
-        if (base64) {
-          notifyChange(base64);
-        }
+        // Store the file and show consent modal
+        setPendingFile(files[0]);
+        setShowConsentModal(true);
       }
     },
-    [handleFileSelect, notifyChange]
+    []
   );
+
+  /**
+   * Handle consent acceptance
+   */
+  const handleConsentAccept = useCallback(async () => {
+    setShowConsentModal(false);
+    setHasConsented(true);
+    
+    if (pendingFile) {
+      const base64 = await handleFileSelect(pendingFile);
+      if (base64) {
+        notifyChange(base64);
+      }
+      setPendingFile(null);
+    }
+  }, [pendingFile, handleFileSelect, notifyChange]);
+
+  /**
+   * Handle consent decline
+   */
+  const handleConsentDecline = useCallback(() => {
+    setShowConsentModal(false);
+    setHasConsented(false);
+    setPendingFile(null);
+    // Reset input
+    if (inputRef.current) {
+      inputRef.current.value = '';
+    }
+  }, []);
 
   /**
    * 处理清除按钮点击
@@ -79,17 +115,37 @@ export function ImageUploader({ onImageChange, disabled }: ImageUploaderProps) {
     }
   }, [disabled, isUploading]);
 
+  /**
+   * 处理拖拽上传 - 触发隐私同意
+   */
+  const onDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const files = e.dataTransfer.files;
+      if (files && files.length > 0) {
+        // Store the file and show consent modal
+        setPendingFile(files[0]);
+        setShowConsentModal(true);
+      }
+    },
+    []
+  );
+
   return (
     <div className="w-full">
+      {/* Privacy Consent Modal */}
+      <PrivacyConsentModal
+        isOpen={showConsentModal}
+        onAccept={handleConsentAccept}
+        onDecline={handleConsentDecline}
+      />
+
       {/* 上传区域 */}
       <div
         onClick={onClick}
-        onDrop={async (e) => {
-          const base64 = await handleDrop(e);
-          if (base64) {
-            notifyChange(base64);
-          }
-        }}
+        onDrop={onDrop}
         onDragOver={onDragOver}
         className={`
           relative border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer
