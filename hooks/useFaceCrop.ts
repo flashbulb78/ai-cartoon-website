@@ -16,7 +16,8 @@ interface FaceCropResult {
   success: boolean;
   croppedImage?: string;
   error?: string;
-  gender?: 'male' | 'female';
+  // gender 已废弃 - 性别检测现在通过 analyzeFace 中的 Tencent Cloud API 完成
+  gender?: 'male' | 'female' | null;
 }
 
 interface FaceBox {
@@ -136,28 +137,12 @@ export function useFaceCrop(): UseFaceCropReturn {
       const box = detection.box;
       console.log('[FaceCrop] Face detected, box:', box);
 
-      // 使用faceLandmark68Net检测68个特征点
-      let detectedGender: 'male' | 'female' | undefined;
-      try {
-        console.log('[FaceCrop] Detecting face landmarks...');
-        // detectFaceLandmarks uses full 68-point model
-        const landmarks = await faceapi.detectFaceLandmarks(img);
-        
-        if (landmarks) {
-          detectedGender = detectGenderFromLandmarks(landmarks as faceapi.FaceLandmarks68);
-          console.log('[FaceCrop] Detected gender:', detectedGender);
-        }
-      } catch (landmarkError) {
-        console.warn('[FaceCrop] Landmark detection failed:', landmarkError);
-        detectedGender = undefined;
-      }
-
       // 计算扩大后的人脸区域（保持正方形）
       const expandedBox = expandBoxToSquare(box, img.width, img.height, MARGIN);
       
       // 创建裁剪画布
       const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) {
         return { success: false, error: 'Failed to create canvas context' };
       }
@@ -186,7 +171,9 @@ export function useFaceCrop(): UseFaceCropReturn {
       const croppedImageBase64 = canvas.toDataURL('image/jpeg', 0.95);
       
       console.log('[FaceCrop] Face cropped successfully');
-      return { success: true, croppedImage: croppedImageBase64, gender: detectedGender };
+      // 根据规范：性别必须以腾讯云返回结果为准，useFaceCrop 不再使用 face-api.js 检测性别
+      // 性别检测在 analyzeFace 中通过 Tencent Cloud API 完成
+      return { success: true, croppedImage: croppedImageBase64, gender: null };
     } catch (err) {
       console.error('[FaceCrop] Detection error:', err);
       return { 

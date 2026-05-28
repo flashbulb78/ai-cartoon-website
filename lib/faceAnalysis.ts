@@ -231,58 +231,74 @@ function detectJawline(landmarks: faceapi.FaceLandmarks68): 'soft' | 'sharp' | '
 }
 
 /**
- * 检测眼镜（基于面部特征点和图像分析）
+ * 增强的眼镜检测（基于面部特征点和图像分析）
+ * 关注：镜框 + 瞳孔间距比
  */
 function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData): { hasGlasses: boolean; glassesType: 'none' | 'normal' | 'sunglasses' | 'unknown' } {
   const pos = landmarks.positions;
   
-  // 方法1：基于面部特征点的检测
-  // 计算眼睛与眉毛的距离
+  // ========== 方法1：基于面部特征点的检测 ==========
+  
+  // 1.1 计算两眼外角到内角的水平跨度
+  // 左眼: 外角(36) -> 内角(39), 右眼: 内角(42) -> 外角(45)
+  const leftEyeSpan = Math.abs(pos[39].x - pos[36].x);  // 左眼跨度
+  const rightEyeSpan = Math.abs(pos[45].x - pos[42].x); // 右眼跨度
+  
+  // 1.2 计算脸宽（两个外侧轮廓点）
+  const faceWidth = Math.abs(pos[16].x - pos[0].x);
+  
+  // 1.3 计算眼镜占比（两眼中心距离 / 脸宽）
+  const leftEyeCenterX = (pos[36].x + pos[39].x) / 2;
+  const rightEyeCenterX = (pos[42].x + pos[45].x) / 2;
+  const eyeDistance = Math.abs(rightEyeCenterX - leftEyeCenterX);
+  const eyeToFaceRatio = eyeDistance / faceWidth;
+  
+  // 眼镜通常占脸宽的 40%~55%，细框眼镜可能更低
+  const hasGlassesRatio = eyeToFaceRatio > 0.35 && eyeToFaceRatio < 0.60;
+  
+  // 1.4 计算鼻梁宽度与两眼距离的比值（镜架特征）
+  const noseBridgeWidth = Math.abs(pos[31].x - pos[35].x);
+  const glassesFrameRatio = noseBridgeWidth / eyeDistance;
+  const hasNarrowNoseBridge = glassesFrameRatio < 0.15;
+  
+  // 1.5 眉毛与眼睛的距离（戴眼镜时通常更大，因为镜架撑开了眉毛）
   const leftEyebrowCenterY = avgY(pos.slice(17, 22));
   const rightEyebrowCenterY = avgY(pos.slice(22, 27));
   const leftEyeCenterY = avgY(pos.slice(36, 42));
   const rightEyeCenterY = avgY(pos.slice(42, 48));
+  const avgBrowEyeDist = (leftEyebrowCenterY - leftEyeCenterY + rightEyebrowCenterY - rightEyeCenterY) / 2;
+  const hasLargeBrowEyeDist = avgBrowEyeDist > 7;
   
-  const leftBrowEyeDist = leftEyebrowCenterY - leftEyeCenterY;
-  const rightBrowEyeDist = rightEyebrowCenterY - rightEyeCenterY;
-  const avgBrowEyeDist = (leftBrowEyeDist + rightBrowEyeDist) / 2;
-  
-  // 计算两眼中心距离和鼻子宽度
-  const leftEyeCenterX = (pos[36].x + pos[39].x) / 2;
-  const rightEyeCenterX = (pos[42].x + pos[45].x) / 2;
-  const eyeDistance = Math.abs(rightEyeCenterX - leftEyeCenterX);
-  const noseBridgeWidth = Math.abs(pos[31].x - pos[35].x);
-  
-  // 眼镜的几何特征：眼镜框宽度接近两眼距离，鼻梁宽度较小
-  const glassesFrameRatio = noseBridgeWidth / eyeDistance;
-  
-  // 方法2：如果有图像数据，检测眼镜框的边缘特征
-  let hasFrameEdge = false;
+  // ========== 方法2：图像边缘检测 ==========
+  let frameEdgeScore = 0;
   if (imageData) {
     const { data, width, height } = imageData;
     
-    // 在眼睛区域检测水平的边缘（眼镜框的典型特征）
+    // 眼睛区域坐标
     const leftEyeLeftX = Math.floor(pos[36].x);
     const leftEyeRightX = Math.floor(pos[39].x);
     const rightEyeLeftX = Math.floor(pos[42].x);
     const rightEyeRightX = Math.floor(pos[45].x);
+    const leftEyeCenterY = Math.floor(avgY(pos.slice(36, 42)));
+    const rightEyeCenterY = Math.floor(avgY(pos.slice(42, 48)));
     
-    // 眉毛下方区域（眼镜框通常在这里）
-    const eyebrowY = Math.floor((leftEyebrowCenterY + rightEyebrowCenterY) / 2);
-    const eyeTopY = Math.floor(Math.min(leftEyeCenterY, rightEyeCenterY));
+    // 在眼睛上方 10-30px 区域检测镜框上沿
+    const eyeTopY = Math.min(leftEyeCenterY, rightEyeCenterY);
     
-    // 扫描眼睛上方区域是否有明显的水平边缘
-    let horizontalEdges = 0;
-    const scanHeight = Math.max(10, eyeTopY - eyebrowY);
+    // 检测镜框存在的三个指标
+    let horizontalEdgeCount = 0;
+    let frameWidthCount = 0;
+    let bridgeEdgeCount = 0;
     
-    for (let y = eyebrowY; y < eyebrowY + scanHeight; y += 2) {
+    // 2.1 扫描眼睛上方 10-30px 区域（镜框上沿）
+    for (let y = eyeTopY - 30; y < eyeTopY - 5; y += 2) {
       for (let x = leftEyeLeftX; x < leftEyeRightX; x += 2) {
         if (x + 1 < width && y >= 0 && y < height) {
           const idx = (Math.floor(y) * width + Math.floor(x)) * 4;
           const nextIdx = (Math.floor(y) * width + Math.floor(x + 1)) * 4;
           if (idx >= 0 && nextIdx < data.length) {
             const diff = Math.abs(data[idx] - data[nextIdx]);
-            if (diff > 30) horizontalEdges++;
+            if (diff > 25) horizontalEdgeCount++;
           }
         }
       }
@@ -292,21 +308,57 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
           const nextIdx = (Math.floor(y) * width + Math.floor(x + 1)) * 4;
           if (idx >= 0 && nextIdx < data.length) {
             const diff = Math.abs(data[idx] - data[nextIdx]);
-            if (diff > 30) horizontalEdges++;
+            if (diff > 25) horizontalEdgeCount++;
           }
         }
       }
     }
     
-    // 如果在眼睛上方区域检测到足够多的水平边缘，说明可能有眼镜框
-    const expectedFrameWidth = (leftEyeRightX - leftEyeLeftX + rightEyeRightX - rightEyeLeftX) / 2;
-    hasFrameEdge = horizontalEdges > expectedFrameWidth * 0.3;
+    // 2.2 检查镜框宽度是否与眼睛跨度匹配
+    const leftFrameWidth = leftEyeRightX - leftEyeLeftX;
+    const rightFrameWidth = rightEyeRightX - rightEyeLeftX;
+    const expectedFrameWidth = (leftFrameWidth + rightFrameWidth) / 2;
+    const actualEyeSpan = (leftEyeSpan + rightEyeSpan) / 2;
+    // 正常眼镜的镜框宽度应该比眼睛跨度稍大
+    const frameWidthRatio = actualEyeSpan / expectedFrameWidth;
+    frameWidthCount = (frameWidthRatio > 0.8 && frameWidthRatio < 1.3) ? expectedFrameWidth * 0.5 : 0;
+    
+    // 2.3 检测鼻梁区域的镜架边缘（左右镜片之间的鼻架）
+    const bridgeY = Math.floor((pos[30].y + pos[27].y) / 2); // 鼻梁位置
+    for (let y = bridgeY - 5; y < bridgeY + 5; y += 2) {
+      const bridgeLeftX = Math.floor(pos[39].x);
+      const bridgeRightX = Math.floor(pos[42].x);
+      for (let x = bridgeLeftX; x < bridgeRightX; x += 2) {
+        if (x + 1 < width && y >= 0 && y < height) {
+          const idx = (Math.floor(y) * width + Math.floor(x)) * 4;
+          const nextIdx = (Math.floor(y) * width + Math.floor(x + 1)) * 4;
+          if (idx >= 0 && nextIdx < data.length) {
+            const diff = Math.abs(data[idx] - data[nextIdx]);
+            // 鼻梁区域有明显边缘可能是镜架
+            if (diff > 20) bridgeEdgeCount++;
+          }
+        }
+      }
+    }
+    
+    // 综合边缘得分
+    const totalEdgeScore = horizontalEdgeCount + frameWidthCount + bridgeEdgeCount;
+    frameEdgeScore = totalEdgeScore / (expectedFrameWidth * 2 + 50);
   }
   
-  // 综合判断：眉毛与眼睛距离足够大，或检测到眼镜框边缘
-  const browEyeThresholdMet = avgBrowEyeDist > 8 && glassesFrameRatio < 0.15;
+  // ========== 综合判断 ==========
+  const landmarkScore = (hasGlassesRatio ? 2 : 0) + (hasNarrowNoseBridge ? 1 : 0) + (hasLargeBrowEyeDist ? 1 : 0);
+  const totalScore = landmarkScore + frameEdgeScore;
   
-  if (browEyeThresholdMet || hasFrameEdge) {
+  // 判断阈值：特征分 >= 2 或 边缘得分 > 0.1
+  const hasGlassesByLandmarks = landmarkScore >= 2;
+  const hasGlassesByEdges = frameEdgeScore > 0.1;
+  
+  if (hasGlassesByLandmarks || hasGlassesByEdges) {
+    // 额外判断：如果是近视眼镜（细框），需要更强的边缘信号
+    if (hasNarrowNoseBridge && !hasGlassesByEdges && frameEdgeScore < 0.05) {
+      return { hasGlasses: false, glassesType: 'none' };
+    }
     return { hasGlasses: true, glassesType: 'normal' };
   }
   
@@ -460,10 +512,15 @@ function loadImage(imageBase64: string): Promise<HTMLImageElement> {
 
 /**
  * 综合分析人脸图像
+ * @param imageBase64 - Base64编码的图像
+ * @param options - 可选参数
+ * @param options.skipColorDetection - 是否跳过颜色检测
  */
 export async function analyzeFace(
   imageBase64: string,
-  options?: { skipColorDetection?: boolean }
+  options?: {
+    skipColorDetection?: boolean;
+  }
 ): Promise<FaceAnalysisResult> {
   const defaultResult: FaceAnalysisResult = {
     faceDetected: false,
@@ -522,9 +579,59 @@ export async function analyzeFace(
     const detections = await faceapi.detectAllFaces(img, faceDetectorOptions);
     console.log('[FaceAnalysis] Detections:', detections.length);
 
+    // ========== 优先调用腾讯云 API（即使本地检测失败也要调用）==========
+    // 根据规范：性别必须以腾讯云返回结果为准，腾讯云可能检测到本地漏检的人脸
+    let tencentGenderFromApi: 'male' | 'female' | null = null;
+    let tencentGenderConfidenceFromApi = 0;
+    let tencentAccessories = {
+      hasGlasses: false,
+      mask: false,
+      beard: false,
+    };
+
+    try {
+      const apiResponse = await fetch("/api/face-analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64 }),
+      });
+
+      if (apiResponse.ok) {
+        const data = await apiResponse.json();
+        tencentGenderFromApi = data.gender ?? null;
+        tencentGenderConfidenceFromApi = data.genderConfidence ?? 0;
+        tencentAccessories = {
+          hasGlasses: data.hasGlasses ?? false,
+          mask: data.hasMask ?? false,
+          beard: data.hasBeard ?? false,
+        };
+        console.log('[FaceAnalysis] Tencent API result:', { gender: tencentGenderFromApi, confidence: tencentGenderConfidenceFromApi, accessories: tencentAccessories });
+      }
+    } catch (e) {
+      console.warn('[FaceAnalysis] 腾讯云 API 调用失败，使用默认值', e);
+    }
+
+    // 如果本地检测失败，但腾讯云成功检测到人脸，仍继续处理
     if (detections.length === 0) {
-      console.warn('[FaceAnalysis] No faces detected in analyzeFace, returning default');
-      return defaultResult;
+      console.warn('[FaceAnalysis] No faces detected locally, but Tencent API returned:', tencentAccessories);
+      // 注意：仍然返回结果，因为腾讯云可能检测到了
+      return {
+        ...defaultResult,
+        faceDetected: tencentAccessories.hasGlasses || tencentAccessories.mask || tencentAccessories.beard,
+        faceCount: 0,
+        gender: tencentGenderFromApi,
+        genderConfidence: tencentGenderConfidenceFromApi,
+        accessories: {
+          hasGlasses: tencentAccessories.hasGlasses,
+          glassesType: tencentAccessories.hasGlasses ? 'normal' : 'none',
+          hasBeard: tencentAccessories.beard,
+          beardLength: tencentAccessories.beard ? 'medium' : 'none',
+          hasHat: false,
+          hatColor: null,
+          hasMask: tencentAccessories.mask,
+          hasOpenEyes: true,
+        }
+      };
     }
     
     const faceCount = detections.length;
@@ -553,10 +660,45 @@ export async function analyzeFace(
     }
 
     const pos = landmarks.positions;
-    
-    // 检测性别
-    const genderResult = detectGender(landmarks);
-    console.log('[FaceAnalysis] Gender:', genderResult);
+
+    // 腾讯云 API 已在前面优先调用（见上方 "优先调用腾讯云 API" 注释）
+    // 性别检测使用已获取的 tencentGenderFromApi
+
+
+    // 性别检测 - 严格按规范
+    // 根据规范：性别必须以腾讯云返回结果为准，仅在无结果时才fallback到本地检测
+    // Fallback 条件：本地置信度 >= 0.9 才采纳
+    const CLOUD_CONFIDENCE_THRESHOLD = 0.8;
+    const LOCAL_CONFIDENCE_THRESHOLD = 0.9;
+
+    let finalGender: 'male' | 'female' | null = null;
+    let finalGenderConfidence = 0;
+    let genderSource: 'tencent' | 'local' | 'unknown' = 'unknown';
+
+    // 1. 优先使用腾讯云性别（高置信度 >= 0.8 才接受）
+    if (tencentGenderFromApi && tencentGenderConfidenceFromApi >= CLOUD_CONFIDENCE_THRESHOLD) {
+      finalGender = tencentGenderFromApi;
+      finalGenderConfidence = tencentGenderConfidenceFromApi;
+      genderSource = 'tencent';
+      console.log('[FaceAnalysis] Using Tencent gender:', finalGender, finalGenderConfidence);
+    }
+    // 2. Fallback 本地，但要求极高置信度 (>= 0.9)
+    else if (!finalGender) {
+      const genderResult = detectGender(landmarks);
+      console.log('[FaceAnalysis] Local gender result:', genderResult);
+      if (genderResult.confidence >= LOCAL_CONFIDENCE_THRESHOLD) {
+        console.warn(`[FaceAnalysis] Using local gender (low cloud confidence): ${genderResult.gender}`);
+        finalGender = genderResult.gender;
+        finalGenderConfidence = genderResult.confidence;
+        genderSource = 'local';
+      } else {
+        // 3. 两者都不靠谱，返回 unknown
+        console.warn(`[FaceAnalysis] Both cloud and local failed, returning unknown`);
+        finalGender = null;
+        finalGenderConfidence = 0;
+        genderSource = 'unknown';
+      }
+    }
     
     // 检测颜色属性
     const colorAttributes = options?.skipColorDetection
@@ -581,7 +723,7 @@ export async function analyzeFace(
     
     // 头发分析
     const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     let hairShapeResult = { shape: 'unknown' as HairShape, confidence: 0 };
     let hairLengthResult = { length: 'unknown' as HairLength, confidence: 0 };
     let bangsResult = { hasBangs: false, style: 'none' as 'none' | 'side' | 'center' | 'unknown' };
@@ -597,34 +739,6 @@ export async function analyzeFace(
       bangsResult = detectBangs(imageData);
     }
 
-    // ========== 腾讯云 API 调用（通过后端接口，安全不崩溃）==========
-    let tencentAccessories = {
-      hasGlasses: false,
-      mask: false,
-      beard: false,
-    };
-
-    try {
-      // 调用后端 API，不直接引用 SDK
-      const apiResponse = await fetch("/api/face-analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64 }),
-      });
-
-      if (apiResponse.ok) {
-        const data = await apiResponse.json();
-        tencentAccessories = {
-          hasGlasses: data.hasGlasses ?? false,
-          mask: data.hasMask ?? false,
-          beard: data.hasBeard ?? false,
-        };
-        console.log("✅ 腾讯云配饰检测成功", tencentAccessories);
-      }
-    } catch (e) {
-      console.warn("[FaceAnalysis] 腾讯云 API 调用失败，使用默认值", e);
-    }
-    
     // 使用face-api.js检测其他特征（人种、脸型、鼻型、眼型、唇型、下颌线、头发等）
     // 检测眼镜（基于面部特征点和图像分析）
     let imageDataForGlasses: ImageData | undefined;
@@ -650,8 +764,8 @@ export async function analyzeFace(
     return {
       faceDetected: true,
       faceCount,
-      gender: genderResult.gender,
-      genderConfidence: genderResult.confidence,
+      gender: finalGender,
+      genderConfidence: finalGenderConfidence,
       ethnicity: ethnicity.ethnicity,
       ethnicityConfidence: ethnicity.confidence,
       colorAttributes,
@@ -773,7 +887,7 @@ export function generateFullPrompt(
   if (result.accessories) {
     const acc = result.accessories;
     if (acc.hasGlasses && acc.glassesType !== 'unknown') {
-      parts.push(`Must wear ${acc.glassesType} glasses.`);
+      parts.push(`CRITICAL CONSTRAINT: The person is wearing ${acc.glassesType} glasses. You MUST preserve the glasses in the final image. DO NOT remove, omit, or stylize away the glasses. Glasses shape must match the original photo.`);
     }
     if (acc.hasBeard) {
       parts.push(`Has ${acc.beardLength} beard.`);

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 /**
  * components/Header.tsx
@@ -49,7 +50,7 @@ export function Header({ isLoggedIn, userName, userAvatar, credits, onLogin, onP
   };
 
   return (
-    <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50">
+    <header className="bg-background/80 backdrop-blur-md border-b border-border sticky top-0 z-50">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo区域 */}
@@ -71,6 +72,9 @@ export function Header({ isLoggedIn, userName, userAvatar, credits, onLogin, onP
 
           {/* 右侧导航 */}
           <nav className="flex items-center gap-2 sm:gap-4">
+            {/* 主题切换 */}
+            <ThemeToggle />
+            
             {/* 定价按钮 */}
             {onPricing && (
               <button

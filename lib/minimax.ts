@@ -173,9 +173,18 @@ export async function generateCartoonAvatar(
         hairPrompt += ` Bangs style: ${faceAnalysis.hairBangsStyle}.`;
       }
     }
+
+    // 配饰特征（眼镜优先）
+    let accessoriesPrompt = '';
+    if (faceAnalysis?.accessories) {
+      const acc = faceAnalysis.accessories;
+      if (acc.hasGlasses && acc.glassesType !== 'unknown') {
+        accessoriesPrompt = `CRITICAL CONSTRAINT: The person is wearing ${acc.glassesType} glasses. You MUST preserve the glasses in the final image. DO NOT remove, omit, or stylize away the glasses. Glasses shape must match the original photo.`;
+      }
+    }
     
     // 构建完整提示词
-    const prompt = `${genderPrompt}${ethnicityPrompt}${colorPrompt}${hairPrompt} Style: ${stylePrompt} Transform: ${Math.round((1 - (styleStrength ?? STYLE_STRENGTH)) * 100)}% only.`.trim();
+    const prompt = `${accessoriesPrompt}${genderPrompt}${ethnicityPrompt}${colorPrompt}${hairPrompt} Style: ${stylePrompt} Transform: ${Math.round((1 - (styleStrength ?? STYLE_STRENGTH)) * 100)}% only.`.trim();
     
     console.log('[MiniMax] Generated prompt:', prompt.substring(0, 150) + '...');
     console.log('[MiniMax] Face similarity strength:', FACE_SIMILARITY_STRENGTH);

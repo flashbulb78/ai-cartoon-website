@@ -13,9 +13,10 @@ const client = new FaceClient({
   region: "ap-guangzhou",
 });
 
-// 人脸分析（返回配饰信息）- 带超时和降级
+// 人脸分析（返回配饰+性别信息）- 带超时和降级
+// 使用 DetectFaceAttributes API - 更完整的属性模型
 export async function analyzeFaceWithTencent(imageBase64: string) {
-  console.log("[TencentSDK] AnalyzeFace called");
+  console.log("[TencentSDK] DetectFaceAttributes called");
 
   // 5秒超时
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -24,31 +25,86 @@ export async function analyzeFaceWithTencent(imageBase64: string) {
 
   try {
     const resp = await Promise.race([
-      client.AnalyzeFace({
+      // @ts-ignore - DetectFaceAttributes may not exist in type definition
+      client.DetectFaceAttributes({
         Image: imageBase64,
-        FaceAttributesType: "Glass,Mask,Moustache,Hat",
+        // @ts-ignore
+        FaceAttributesType: "Gender,Glass,Mask,Moustache,Hat",
+        MaxFaceNum: 1,
       }),
       timeoutPromise,
     ]);
 
-    // @ts-ignore - FaceShape 在类型定义中可能不存在但API返回
-    if (!resp.FaceShape || resp.FaceShape.length === 0) {
-      return { glass: false, mask: false, beard: false };
+    // @ts-ignore - FaceDetailInfos 在类型定义中可能不存在但API返回
+    const faceDetails = resp.FaceDetailInfos;
+    if (!faceDetails || faceDetails.length === 0) {
+      console.log("[TencentSDK] No face detected");
+      return {
+        glass: false,
+        mask: false,
+        beard: false,
+        gender: null,
+        genderConfidence: 0
+      };
     }
+
     // @ts-ignore
-    const face = resp.FaceShape[0];
+    const faceDetail = faceDetails[0];
+    // @ts-ignore
+    const attributesInfo = faceDetail.FaceDetailAttributesInfo;
+
+    // 解析性别: 1=男, 2=女, 0=未知
+    // @ts-ignore
+    const genderInfo = attributesInfo?.Gender;
+    let gender: 'male' | 'female' | null = null;
+    let genderConfidence = 0;
+
+    if (genderInfo?.Type === 1) {
+      gender = 'male';
+      genderConfidence = genderInfo.Probability ?? 0;
+    } else if (genderInfo?.Type === 2) {
+      gender = 'female';
+      genderConfidence = genderInfo.Probability ?? 0;
+    } else {
+      // 明确处理未知情况 (Type === 0 或不存在)
+      gender = null;
+      genderConfidence = 0;
+    }
+
+    // 解析配饰信息
+    // @ts-ignore
+    const hasGlasses = attributesInfo?.Glass?.Value === 1;
+    // @ts-ignore
+    const hasMask = attributesInfo?.Mask?.Value === 1;
+    // @ts-ignore
+    const hasBeard = attributesInfo?.Moustache?.Value === 1;
+
+    // 结构化日志
+    console.log("[TencentSDK] DetectFaceAttributes result", {
+      genderType: genderInfo?.Type,
+      genderProb: genderInfo?.Probability,
+      hasGlasses,
+      hasMask,
+      hasBeard,
+    });
+
     return {
-      // @ts-ignore
-      glass: face.Accessories?.Glass === 1,
-      // @ts-ignore
-      mask: face.Mask === 1,
-      // @ts-ignore
-      beard: face.Beard === 1,
+      glass: hasGlasses,
+      mask: hasMask,
+      beard: hasBeard,
+      gender,
+      genderConfidence,
     };
   } catch (err) {
     console.error("[TencentSDK] Error:", (err as Error).message);
-    console.warn("[Tencent] API 调用失败，降级使用默认值:", err);
-    return { glass: false, mask: false, beard: false };
+    console.warn("[TencentSDK] API 调用失败，降级使用默认值:", err);
+    return {
+      glass: false,
+      mask: false,
+      beard: false,
+      gender: null,
+      genderConfidence: 0
+    };
   }
 }
 

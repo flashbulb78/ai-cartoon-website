@@ -263,10 +263,10 @@ export default function HomePage() {
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* 页面标题 */}
         <div className="text-center mb-8">
-          <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">
+          <h2 className="text-3xl sm:text-4xl font-bold text-foreground tracking-tight">
             Create Your AI Cartoon Avatar
           </h2>
-          <p className="mt-3 text-gray-600 max-w-2xl mx-auto">
+          <p className="mt-3 text-muted-foreground max-w-2xl mx-auto">
             Upload your photo and choose a style to generate a unique cartoon avatar in seconds
           </p>
         </div>
@@ -277,17 +277,17 @@ export default function HomePage() {
           <div className="space-y-5">
             {/* 剩余次数提示（已登录用户） */}
             {user && profile && (
-              <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-4 border border-blue-100">
+              <div className="bg-card rounded-2xl p-4 border border-border">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                    <div className="w-10 h-10 bg-primary/20 rounded-xl flex items-center justify-center">
                       <span className="text-xl">✨</span>
                     </div>
                     <div>
-                      <p className="font-semibold text-gray-900">
+                      <p className="font-semibold text-foreground">
                         {profile.credits} Credits Available
                       </p>
-                      <p className="text-sm text-gray-500">
+                      <p className="text-sm text-muted-foreground">
                         {profile.is_premium ? 'Premium member - unlimited generations' : 'Free tier'}
                       </p>
                     </div>
@@ -302,9 +302,9 @@ export default function HomePage() {
             )}
 
             {/* 图片上传卡片 */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <span className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+            <div className="bg-card rounded-2xl shadow-sm border border-border p-5 sm:p-6">
+              <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-blue-600">
                   1
                 </span>
                 Upload Photo
@@ -316,9 +316,9 @@ export default function HomePage() {
             </div>
 
             {/* 风格选择卡片 */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <span className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+            <div className="bg-card rounded-2xl shadow-sm border border-border p-5 sm:p-6">
+              <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-blue-600">
                   2
                 </span>
                 Choose Style
@@ -342,9 +342,9 @@ export default function HomePage() {
             />
 
             {/* 生成按钮卡片 */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <span className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+            <div className="bg-card rounded-2xl shadow-sm border border-border p-5 sm:p-6">
+              <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-blue-600">
                   3
                 </span>
                 Generate
@@ -380,7 +380,7 @@ export default function HomePage() {
 
               {/* 性别选择 */}
               <div className="mb-4">
-                <p className="text-sm text-gray-600 mb-2 text-center">Gender (Optional)</p>
+                <p className="text-sm text-muted-foreground mb-2 text-center">Gender (Optional)</p>
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -392,7 +392,7 @@ export default function HomePage() {
                       flex items-center justify-center gap-2
                       ${genderForce === 'male'
                         ? 'bg-blue-500 text-white shadow-md'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        : 'bg-muted text-muted-foreground hover:bg-gray-200'
                       }
                       active:scale-95
                     `}
@@ -412,7 +412,7 @@ export default function HomePage() {
                       flex items-center justify-center gap-2
                       ${genderForce === 'female'
                         ? 'bg-blue-500 text-white shadow-md'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        : 'bg-muted text-muted-foreground hover:bg-gray-200'
                       }
                       active:scale-95
                     `}
@@ -488,9 +488,9 @@ export default function HomePage() {
           </div>
 
           {/* 右侧：结果预览区 */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-              <span className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+          <div className="bg-card rounded-2xl shadow-sm border border-border p-5 sm:p-6">
+            <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+              <span className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-blue-600">
                 ✨
               </span>
               Result
@@ -518,13 +518,13 @@ export default function HomePage() {
       {/* 登录提示弹窗 */}
       {showLoginModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
+          <div className="bg-card rounded-2xl shadow-2xl max-w-md w-full p-8">
             <div className="text-center">
-              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-3xl">🔐</span>
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Login Required</h3>
-              <p className="text-gray-600 mb-6">
+              <h3 className="text-xl font-bold text-foreground mb-2">Login Required</h3>
+              <p className="text-muted-foreground mb-6">
                 Please login to generate avatars and track your credits
               </p>
               <div className="flex gap-3">
@@ -543,13 +543,13 @@ export default function HomePage() {
       {/* 次数不足弹窗 */}
       {showCreditsModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
+          <div className="bg-card rounded-2xl shadow-2xl max-w-md w-full p-8">
             <div className="text-center">
               <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-3xl">⚠️</span>
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Credits Ran Out</h3>
-              <p className="text-gray-600 mb-6">
+              <h3 className="text-xl font-bold text-foreground mb-2">Credits Ran Out</h3>
+              <p className="text-muted-foreground mb-6">
                 You have no credits remaining. Upgrade to Premium for unlimited generations!
               </p>
               <div className="flex gap-3">
@@ -568,13 +568,13 @@ export default function HomePage() {
       {/* 重新生成确认弹窗 */}
       {showRegenerateConfirmModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
+          <div className="bg-card rounded-2xl shadow-2xl max-w-md w-full p-8">
             <div className="text-center">
-              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-3xl">🔄</span>
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Regenerate Avatar</h3>
-              <p className="text-gray-600 mb-6">
+              <h3 className="text-xl font-bold text-foreground mb-2">Regenerate Avatar</h3>
+              <p className="text-muted-foreground mb-6">
                 Regenerating will cost 1 credit. Do you want to continue?
               </p>
               <div className="flex gap-3">
