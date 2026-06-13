@@ -14,7 +14,7 @@ import { GenerationHistory } from '@/lib/types';
 import { downloadImage } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 
-const ITEMS_PER_PAGE = 12;
+const ITEMS_PER_PAGE = 10;
 
 export default function CreationsPage() {
   const router = useRouter();
@@ -22,6 +22,7 @@ export default function CreationsPage() {
   const [history, setHistory] = useState<GenerationHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [isClearingAll, setIsClearingAll] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
@@ -106,6 +107,30 @@ export default function CreationsPage() {
     }
   }, [supabase]);
 
+  const handleClearAll = useCallback(async () => {
+    if (!user) return;
+    if (!confirm('Are you sure you want to delete ALL your avatar records? This action cannot be undone.')) return;
+
+    setIsClearingAll(true);
+    try {
+      const { error } = await supabase
+        .from('generations')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (error) {
+        alert('Failed to delete all records. Please try again.');
+      } else {
+        setHistory([]);
+        setTotalCount(0);
+      }
+    } catch (error) {
+      alert('Failed to delete all records. Please try again.');
+    } finally {
+      setIsClearingAll(false);
+    }
+  }, [supabase, user]);
+
   const handleSignOut = useCallback(async () => {
     await signOut();
     router.push('/');
@@ -118,6 +143,11 @@ export default function CreationsPage() {
       </div>
     );
   }
+
+  // ========== 数据保留说明 ==========
+  // 系统仅保留最近10次生成记录
+  // 原图由用户在本地保存，生成结果可在"我的创作"页面查看和下载
+  const DATA_RETENTION_NOTICE = 'System keeps only the 10 most recent generation records. Original images are stored locally on your device.';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
@@ -160,6 +190,27 @@ export default function CreationsPage() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          {/* 数据保留提示 */}
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+            <div className="flex items-start gap-3">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <p className="text-sm text-blue-700">{DATA_RETENTION_NOTICE}</p>
+            </div>
+          </div>
+
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -180,6 +231,16 @@ export default function CreationsPage() {
             </div>
           ) : (
             <>
+              <div className="flex justify-between items-center mb-4">
+                <p className="text-sm text-gray-500">{totalCount} avatar(s)</p>
+                <button
+                  onClick={handleClearAll}
+                  disabled={isClearingAll}
+                  className="px-3 py-1.5 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all disabled:opacity-50"
+                >
+                  {isClearingAll ? 'Clearing...' : 'Clear All'}
+                </button>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {history.map((item, index) => (
                   <div 

@@ -34,19 +34,19 @@ export interface StyleDefaultParams {
  * 13套风格的专属最优初始参数
  */
 export const STYLE_DEFAULT_PARAMS: Record<CartoonStyle, StyleDefaultParams> = {
-  pixar_3d_cartoon: { faceSimilarity: 0.9, styleStrength: 0.25, fidelity: 0.85 },
-  american_retro_cartoon: { faceSimilarity: 0.9, styleStrength: 0.28, fidelity: 0.82 },
-  cyberpunk_neon: { faceSimilarity: 0.88, styleStrength: 0.32, fidelity: 0.78 },
-  minimal_illustration: { faceSimilarity: 0.92, styleStrength: 0.22, fidelity: 0.88 },
-  japanese_anime: { faceSimilarity: 0.9, styleStrength: 0.28, fidelity: 0.82 },
-  korean_soft_portrait: { faceSimilarity: 0.9, styleStrength: 0.25, fidelity: 0.85 },
-  japanese_watercolor: { faceSimilarity: 0.9, styleStrength: 0.22, fidelity: 0.85 },
-  gothic_dark: { faceSimilarity: 0.88, styleStrength: 0.32, fidelity: 0.78 },
-  vintage_pixel: { faceSimilarity: 0.9, styleStrength: 0.25, fidelity: 0.82 },
-  oil_painting: { faceSimilarity: 0.9, styleStrength: 0.22, fidelity: 0.85 },
-  steampunk_vintage: { faceSimilarity: 0.88, styleStrength: 0.28, fidelity: 0.8 },
-  chibi_q_version: { faceSimilarity: 0.92, styleStrength: 0.35, fidelity: 0.75 },
-  street_sport: { faceSimilarity: 0.9, styleStrength: 0.28, fidelity: 0.82 },
+  pixar_3d_cartoon: { faceSimilarity: 0.9, styleStrength: 0.30, fidelity: 0.85 },
+  american_retro_cartoon: { faceSimilarity: 0.9, styleStrength: 0.33, fidelity: 0.82 },
+  cyberpunk_neon: { faceSimilarity: 0.88, styleStrength: 0.37, fidelity: 0.78 },
+  minimal_illustration: { faceSimilarity: 0.92, styleStrength: 0.27, fidelity: 0.88 },
+  japanese_anime: { faceSimilarity: 0.9, styleStrength: 0.33, fidelity: 0.82 },
+  korean_soft_portrait: { faceSimilarity: 0.9, styleStrength: 0.30, fidelity: 0.85 },
+  japanese_watercolor: { faceSimilarity: 0.9, styleStrength: 0.27, fidelity: 0.85 },
+  gothic_dark: { faceSimilarity: 0.88, styleStrength: 0.37, fidelity: 0.78 },
+  vintage_pixel: { faceSimilarity: 0.9, styleStrength: 0.30, fidelity: 0.82 },
+  oil_painting: { faceSimilarity: 0.9, styleStrength: 0.27, fidelity: 0.85 },
+  steampunk_vintage: { faceSimilarity: 0.88, styleStrength: 0.33, fidelity: 0.8 },
+  chibi_q_version: { faceSimilarity: 0.92, styleStrength: 0.40, fidelity: 0.75 },
+  street_sport: { faceSimilarity: 0.9, styleStrength: 0.33, fidelity: 0.82 },
 };
 
 /**
@@ -86,7 +86,7 @@ export interface GenerateRequest {
  * 颜色属性（肤色、发色、眼睛颜色）
  */
 export interface ColorAttributes {
-  skinTone: 'light' | 'medium' | 'dark' | 'unknown';
+  skinTone: 'light' | 'medium' | 'dark' | 'medium_light' | 'medium_dark' | 'unknown';
   skinColor: string; // hex
   hairColor: 'black' | 'brown' | 'blonde' | 'red' | 'gray' | 'white' | 'unknown';
   hairColorHex: string;
@@ -97,7 +97,7 @@ export interface ColorAttributes {
 /**
  * 人种分类
  */
-export type Ethnicity = 'caucasian' | 'asian' | 'african' | 'indian' | 'latin_american' | 'middle_eastern' | 'unknown';
+export type Ethnicity = 'white' | 'black' | 'yellow' | 'unknown';
 
 /**
  * 头发形状
@@ -147,8 +147,11 @@ export interface FaceAnalysisResult {
   accessories?: {
     hasGlasses: boolean;
     glassesType: 'none' | 'normal' | 'sunglasses' | 'myopia' | 'unknown';
+    glassesFrameColor: 'black' | 'brown' | 'silver' | 'gold' | 'red' | 'blue' | 'white' | 'none' | 'unknown';
     hasBeard: boolean;
     beardLength: 'none' | 'short' | 'medium' | 'long' | 'unknown';
+    beardShape: 'none' | 'thin' | 'thick' | 'trimmed' | 'full' | 'goatee' | 'unknown';
+    beardColor: 'none' | 'black' | 'brown' | 'dark_brown' | 'gray' | 'white' | 'red' | 'blonde' | 'unknown';
     hasHat: boolean;
     hatColor: string | null;
     hasMask: boolean;

@@ -16,8 +16,7 @@
     "next": "16.2.6",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "stripe": "^22.1.1",
-    "tencentcloud-sdk-nodejs": "^4.1.237"
+    "stripe": "^22.1.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -50,6 +50,22 @@ const STYLE_PROMPTS: Record<CartoonStyle, string> = {
 };
 
 /**
+ * MiniMax API 超时配置 (毫秒)
+ * 延长至120秒避免固定1分钟截断
+ */
+const MINIMAX_TIMEOUT = 120 * 1000;
+
+/**
+ * 重试配置
+ */
+const RETRY_CONFIG = {
+  maxRetries: 3,
+  baseDelayMs: 1500,
+  maxDelayMs: 3000,
+  retryableStatusCodes: [1000, 408, 429, 500, 502, 503, 504],
+};
+
+/**
  * 清理Base64图片字符串
  * 移除可能存在的前缀（如 data:image/png;base64,）
  */
@@ -87,6 +103,87 @@ function validateConfig(): { valid: boolean; error?: string } {
   }
 
   return { valid: true };
+}
+
+/**
+ * 判断错误是否可重试
+ */
+function isRetryableError(data: Record<string, unknown>, status: number): boolean {
+  // 检查status_code字段（MiniMax特定错误码）
+  if (data.status_code === 1000 || data.status_code === '1000') {
+    return true;
+  }
+  // 检查rpc timeout错误
+  const errorObj = data.error as Record<string, unknown> | undefined;
+  if (errorObj?.type === 'rpc_timeout' || String(data.error).includes('timeout')) {
+    return true;
+  }
+  // 检查HTTP状态码
+  if (RETRY_CONFIG.retryableStatusCodes.includes(status)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 带重试的fetch调用
+ */
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  retryCount = 0
+): Promise<{ response: Response; data: Record<string, unknown> }> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), MINIMAX_TIMEOUT);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    let data: Record<string, unknown> = {};
+    try {
+      data = await response.json();
+    } catch {
+      // 响应体可能为空或非JSON
+    }
+
+    // 检查是否应该重试
+    if (retryCount < RETRY_CONFIG.maxRetries && isRetryableError(data, response.status)) {
+      const delay = Math.min(
+        RETRY_CONFIG.baseDelayMs * Math.pow(2, retryCount),
+        RETRY_CONFIG.maxDelayMs
+      );
+      console.log(`[MiniMax] Retry ${retryCount + 1}/${RETRY_CONFIG.maxRetries} after ${delay}ms delay`);
+      console.log(`[MiniMax] Retry reason: status_code=${data.status_code}, HTTP status=${response.status}`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return fetchWithRetry(url, options, retryCount + 1);
+    }
+
+    return { response, data };
+  } catch (error) {
+    clearTimeout(timeoutId);
+
+    // 判断是否是超时错误
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.log(`[MiniMax] Request timeout after ${MINIMAX_TIMEOUT}ms`);
+      if (retryCount < RETRY_CONFIG.maxRetries) {
+        const delay = Math.min(
+          RETRY_CONFIG.baseDelayMs * Math.pow(2, retryCount),
+          RETRY_CONFIG.maxDelayMs
+        );
+        console.log(`[MiniMax] Retry ${retryCount + 1}/${RETRY_CONFIG.maxRetries} after ${delay}ms delay (timeout)`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return fetchWithRetry(url, options, retryCount + 1);
+      }
+      throw new Error(`Request timeout after ${MINIMAX_TIMEOUT}ms`);
+    }
+
+    throw error;
+  }
 }
 
 /**
@@ -164,7 +261,12 @@ export async function generateCartoonAvatar(
     let hairPrompt = '';
     if (faceAnalysis) {
       if (faceAnalysis.hairLength !== 'unknown' && faceAnalysis.hairLength !== 'bald') {
-        hairPrompt += ` Hair length: ${faceAnalysis.hairLength}.`;
+        // black very_short 头发：贴头皮短发茬，用更具体的描述
+        if (faceAnalysis.ethnicity === 'black' && faceAnalysis.hairLength === 'very_short') {
+          hairPrompt += ` Very short natural hair (buzz cut style).`;
+        } else {
+          hairPrompt += ` Hair length: ${faceAnalysis.hairLength}.`;
+        }
       }
       if (faceAnalysis.hairShape !== 'unknown') {
         hairPrompt += ` Hair texture: ${faceAnalysis.hairShape}.`;
@@ -174,19 +276,40 @@ export async function generateCartoonAvatar(
       }
     }
 
-    // 配饰特征（眼镜优先）
+    // 配饰特征（眼镜、胡须）
     let accessoriesPrompt = '';
     if (faceAnalysis?.accessories) {
       const acc = faceAnalysis.accessories;
       if (acc.hasGlasses && acc.glassesType !== 'unknown') {
         accessoriesPrompt = `CRITICAL CONSTRAINT: The person is wearing ${acc.glassesType} glasses. You MUST preserve the glasses in the final image. DO NOT remove, omit, or stylize away the glasses. Glasses shape must match the original photo.`;
       }
+      if (acc.hasBeard) {
+        let beardDesc = `CRITICAL CONSTRAINT: The person has a ${acc.beardLength} beard`;
+        if (acc.beardShape && acc.beardShape !== 'unknown') {
+          beardDesc += ` (${acc.beardShape} texture`;
+          if (acc.beardColor && acc.beardColor !== 'unknown' && acc.beardColor !== 'none') {
+            beardDesc += `, ${acc.beardColor} color`;
+          }
+          beardDesc += ')';
+        }
+        beardDesc += '. You MUST preserve the beard in the final image. DO NOT remove, omit, or stylize away the beard.';
+        accessoriesPrompt += ` ${beardDesc}`;
+      }
     }
     
     // 构建完整提示词
     const prompt = `${accessoriesPrompt}${genderPrompt}${ethnicityPrompt}${colorPrompt}${hairPrompt} Style: ${stylePrompt} Transform: ${Math.round((1 - (styleStrength ?? STYLE_STRENGTH)) * 100)}% only.`.trim();
     
-    console.log('[MiniMax] Generated prompt:', prompt.substring(0, 150) + '...');
+    // 对于黑人秃头，添加负向prompt防止AI生成头发
+    let negativePrompt = '';
+    if (faceAnalysis?.ethnicity === 'black' && faceAnalysis?.hairLength === 'bald') {
+      negativePrompt = 'long hair, medium hair, short hair, any hair on head, hair strands, follicular hair, fuzzy head';
+      console.log('[MiniMax] Black bald detected, using negative prompt for hair');
+    }
+    
+    console.log('========== [MiniMax] GENERATED PROMPT ==========');
+    console.log(prompt);
+    console.log('========== [MiniMax] PROMPT END ==========');
     console.log('[MiniMax] Face similarity strength:', FACE_SIMILARITY_STRENGTH);
     console.log('[MiniMax] Style strength:', STYLE_STRENGTH);
 
@@ -226,7 +349,7 @@ export async function generateCartoonAvatar(
       style_strength: styleStrength ?? STYLE_STRENGTH,
       denoising_strength: 0.35,
       face_preservation_weight: 0.95,
-      negative_prompt: '',
+      negative_prompt: negativePrompt,
       auto_beauty: false,
       face_reshape: false,
       auto_face_correction: false,
@@ -245,34 +368,31 @@ export async function generateCartoonAvatar(
       image: requestBody.image.substring(0, 50) + '... (truncated for log)',
     }));
 
-    // 5. 调用MiniMax API
-    const response = await fetch(`${MINIMAX_BASE_URL}/image_generation`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${MINIMAX_API_KEY}`,
-      },
-      body: JSON.stringify(requestBody),
-    });
+    // 5. 调用MiniMax API（带重试机制）
+    console.log(`[MiniMax] Making API call with ${MINIMAX_TIMEOUT}ms timeout and up to ${RETRY_CONFIG.maxRetries} retries`);
+    const { response, data } = await fetchWithRetry(
+      `${MINIMAX_BASE_URL}/image_generation`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${MINIMAX_API_KEY}`,
+        },
+        body: JSON.stringify(requestBody),
+      }
+    );
 
     console.log('[MiniMax] Response status:', response.status);
     console.log('[MiniMax] Response ok:', response.ok);
 
     // 6. 处理错误响应
     if (!response.ok) {
-      let errorData: Record<string, unknown> = {};
-      try {
-        errorData = await response.json();
-      } catch {
-        console.log('[MiniMax] Could not parse error response as JSON');
-      }
+      console.error('[MiniMax] API error response:', data);
       
-      console.error('[MiniMax] API error response:', errorData);
-      
-      const err = errorData.error;
-      const errorMessage = (typeof err === 'object' && err !== null && 'message' in err)
+      const err = data.error as Record<string, unknown> | undefined;
+      const errorMessage = (err && typeof err === 'object' && 'message' in err)
         ? String(err.message)
-        : errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`;
+        : data.message || data.error || `HTTP ${response.status}: ${response.statusText}`;
       
       return {
         success: false,
@@ -280,8 +400,6 @@ export async function generateCartoonAvatar(
       };
     }
 
-    // 7. 解析成功响应
-    const data = await response.json();
     console.log('[MiniMax] Response data keys:', Object.keys(data));
     console.log('[MiniMax] Response data:', JSON.stringify(data).substring(0, 300));
 
@@ -290,28 +408,40 @@ export async function generateCartoonAvatar(
       console.error('[MiniMax] API returned error object:', data.error);
       return {
         success: false,
-        error: data.error.message || data.error || 'Generation failed',
+        error: (data.error as { message?: string }).message || String(data.error) || 'Generation failed',
       };
     }
 
     // 8. 提取图片数据 - MiniMax返回格式可能不同
     let imageUrl: string | undefined;
     
+    // 定义MiniMax响应数据类型
+    interface MiniMaxResponseData {
+      image_base64?: string[];
+      images?: { b64_image?: string }[];
+      image?: string;
+      b64_image?: string;
+      processing_time?: number;
+      processingTime?: number;
+    }
+    
+    const responseData = data.data as MiniMaxResponseData | undefined;
+    
     // 尝试多种可能的响应格式
-    if (data.data?.image_base64?.[0]) {
-      imageUrl = data.data.image_base64[0];
+    if (responseData?.image_base64?.[0]) {
+      imageUrl = responseData.image_base64[0];
       console.log('[MiniMax] Found image in data.image_base64[0]');
-    } else if (data.data?.images?.[0]?.b64_image) {
-      imageUrl = data.data.images[0].b64_image;
+    } else if (responseData?.images?.[0]?.b64_image) {
+      imageUrl = responseData.images[0].b64_image;
       console.log('[MiniMax] Found image in data.images[0].b64_image');
     } else if (data.b64_image) {
-      imageUrl = data.b64_image;
+      imageUrl = data.b64_image as string;
       console.log('[MiniMax] Found image in b64_image');
     } else if (data.image) {
-      imageUrl = data.image;
+      imageUrl = data.image as string;
       console.log('[MiniMax] Found image in image field');
-    } else if (data.data?.image) {
-      imageUrl = data.data.image;
+    } else if (responseData?.image) {
+      imageUrl = responseData.image;
       console.log('[MiniMax] Found image in data.image');
     }
 
@@ -330,7 +460,7 @@ export async function generateCartoonAvatar(
       success: true,
       data: {
         imageUrl: `data:image/png;base64,${imageUrl}`,
-        processingTime: data.processing_time || data.processingTime || 0,
+        processingTime: (responseData?.processing_time || responseData?.processingTime || 0) as number,
       },
     };
   } catch (error) {

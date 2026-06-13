@@ -16,7 +16,7 @@ interface FaceCropResult {
   success: boolean;
   croppedImage?: string;
   error?: string;
-  // gender 已废弃 - 性别检测现在通过 analyzeFace 中的 Tencent Cloud API 完成
+  // gender 已废弃 - 性别检测现在通过 analyzeFace 中的本地 face-api.js 模型完成
   gender?: 'male' | 'female' | null;
 }
 
@@ -114,8 +114,8 @@ export function useFaceCrop(): UseFaceCropReturn {
       
       // 使用 TinyFaceDetector 检测人脸
       const faceDetectorOptions = new faceapi.TinyFaceDetectorOptions({
-        inputSize: 320,
-        scoreThreshold: 0.5,
+        inputSize: 416,  // 增大输入尺寸以提高小人脸检测
+        scoreThreshold: 0.35, // 降低阈值提高检测灵敏度
       });
       
       console.log('[FaceCrop] Detecting faces...');
@@ -127,13 +127,27 @@ export function useFaceCrop(): UseFaceCropReturn {
         return { success: false, error: 'No face detected. Please upload a clear front-facing photo.' };
       }
 
-      // 检查是否有多个人脸
+      // 如果检测到多个人脸，选择最大的人脸
+      let selectedDetection = detections[0];
       if (detections.length > 1) {
-        return { success: false, error: 'Multiple faces detected. Please upload a single person photo.' };
+        console.log('[FaceCrop] Multiple faces detected, selecting the largest one');
+        // 计算每个人脸的面积，选择最大的
+        let largestArea = detections[0].box.width * detections[0].box.height;
+        selectedDetection = detections[0];
+        
+        for (let i = 1; i < detections.length; i++) {
+          const area = detections[i].box.width * detections[i].box.height;
+          if (area > largestArea) {
+            largestArea = area;
+            selectedDetection = detections[i];
+          }
+        }
+        
+        console.log('[FaceCrop] Selected face with area:', largestArea.toFixed(0));
       }
 
       // 获取人脸边界框
-      const detection = detections[0];
+      const detection = selectedDetection;
       const box = detection.box;
       console.log('[FaceCrop] Face detected, box:', box);
 
@@ -171,8 +185,7 @@ export function useFaceCrop(): UseFaceCropReturn {
       const croppedImageBase64 = canvas.toDataURL('image/jpeg', 0.95);
       
       console.log('[FaceCrop] Face cropped successfully');
-      // 根据规范：性别必须以腾讯云返回结果为准，useFaceCrop 不再使用 face-api.js 检测性别
-      // 性别检测在 analyzeFace 中通过 Tencent Cloud API 完成
+      // 性别检测在 analyzeFace 中通过本地 face-api.js 模型完成
       return { success: true, croppedImage: croppedImageBase64, gender: null };
     } catch (err) {
       console.error('[FaceCrop] Detection error:', err);

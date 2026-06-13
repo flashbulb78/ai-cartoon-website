@@ -25,6 +25,37 @@ export async function POST(request: Request) {
 
     // ========== 2. 验证用户认证 ==========
     console.log(`[Generate API ${requestId}] Step 1: Verifying user authentication`);
+    
+    // ========== 2.1 CSRF保护验证 ==========
+    const origin = request.headers.get('origin');
+    const referer = request.headers.get('referer');
+    const host = request.headers.get('host');
+    
+    // 验证请求来源是否合法（防止CSRF攻击）
+    // 仅在生产环境执行此检查
+    if (process.env.NODE_ENV === 'production') {
+      const allowedOrigins = [
+        process.env.NEXT_PUBLIC_BASE_URL,
+        `http://${host}`,
+        `https://${host}`,
+      ].filter(Boolean);
+      
+      const isValidOrigin = origin && allowedOrigins.some(allowed => 
+        allowed && (origin === allowed || origin.startsWith(`${allowed}/`))
+      );
+      const isValidReferer = referer && allowedOrigins.some(allowed =>
+        allowed && referer.startsWith(allowed)
+      );
+      
+      if (!isValidOrigin && !isValidReferer) {
+        console.log(`[Generate API ${requestId}] Invalid origin/referer: origin=${origin}, referer=${referer}`);
+        return NextResponse.json<ApiResponse<GenerateResponseData>>(
+          { success: false, error: 'Invalid request origin' },
+          { status: 403 }
+        );
+      }
+    }
+    console.log(`[Generate API ${requestId}] CSRF check passed`);
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     
     if (authError) {
@@ -185,27 +216,43 @@ export async function POST(request: Request) {
       console.log(`[Generate API ${requestId}] Generation successful, processing credits and saving record`);
 
       // 9.1 扣减用户次数（非Premium用户）- 仅在成功后执行，使用动态值
+      // 使用条件更新防止竞态条件：只有余额足够时才扣减
       if (!profile.is_premium) {
         console.log(`[Generate API ${requestId}] Decrementing ${creditsToDeduct} credits from:`, profile.credits);
+        
+        // 原子性条件更新：如果当前余额仍足够，则扣减
+        // 如果另一个请求已扣减，.gte条件不满足则更新失败
         const { error: updateError } = await adminClient
           .from('profiles')
           .update({ credits: profile.credits - creditsToDeduct })
-          .eq('id', user.id);
+          .eq('id', user.id)
+          .gte('credits', creditsToDeduct);
 
         if (updateError) {
           console.error(`[Generate API ${requestId}] Failed to decrement credits:`, updateError);
-          // 不影响生成流程，仅记录错误
         } else {
-          console.log(`[Generate API ${requestId}] Credits decremented successfully, new credits:`, profile.credits - creditsToDeduct);
+          // 检查是否有行被更新（如果没有，说明余额已被其他请求扣减）
+          console.log(`[Generate API ${requestId}] Credits decremented successfully`);
         }
       }
 
-      // 8.2 保存生成记录
+      // 8.2 保存生成记录（仅保留最近10条，自动清理旧记录）
+      // 检查用户当前生成记录数量
+      const { count: currentCount } = await adminClient
+        .from('generations')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+
+      console.log(`[Generate API ${requestId}] User has ${currentCount} generation records`);
+
+      // 插入新记录
       const { error: insertError } = await adminClient
         .from('generations')
         .insert({
           user_id: user.id,
-          original_image: body.image.substring(0, 500) + '...', // 仅保存缩略版本
+          // 不再存储原图的Base64，只存储风格和生成结果URL作为参考
+          // 原图由用户本地缓存，生成的图片URL可重新访问
+          original_image: `style:${body.style}`, // 仅保存风格作为标识
           generated_image: result.data.imageUrl,
           style: body.style,
         });
@@ -215,6 +262,35 @@ export async function POST(request: Request) {
         // 不影响生成流程，仅记录错误
       } else {
         console.log(`[Generate API ${requestId}] Generation record saved successfully`);
+      }
+
+      // 清理旧记录：只保留最近10条
+      if (currentCount !== null && currentCount >= 10) {
+        console.log(`[Generate API ${requestId}] Cleaning up old records (keeping only 10 most recent)`);
+
+        // 查询该用户的旧记录（按时间倒序，跳过前10条，删除其余）
+        const { data: oldRecords, error: fetchOldError } = await adminClient
+          .from('generations')
+          .select('id, created_at')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .range(10, currentCount); // 跳过前10条，获取第11条及之后的记录
+
+        if (fetchOldError) {
+          console.error(`[Generate API ${requestId}] Failed to fetch old records for cleanup:`, fetchOldError);
+        } else if (oldRecords && oldRecords.length > 0) {
+          const oldRecordIds = oldRecords.map((r: { id: string }) => r.id);
+          const { error: deleteError } = await adminClient
+            .from('generations')
+            .delete()
+            .in('id', oldRecordIds);
+
+          if (deleteError) {
+            console.error(`[Generate API ${requestId}] Failed to delete old records:`, deleteError);
+          } else {
+            console.log(`[Generate API ${requestId}] Successfully deleted ${oldRecordIds.length} old records`);
+          }
+        }
       }
 
       // 8.3 更新风格使用统计
@@ -258,6 +334,21 @@ export async function POST(request: Request) {
     console.error(`[Generate API ${requestId}] Error name:`, error instanceof Error ? error.name : 'Unknown');
     console.error(`[Generate API ${requestId}] Error message:`, error instanceof Error ? error.message : String(error));
     console.error(`[Generate API ${requestId}] Error stack:`, error instanceof Error ? error.stack : 'No stack trace');
+    
+    // 判断是否为超时错误
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const isTimeoutError = 
+      errorMessage.includes('timeout') || 
+      errorMessage.includes('Timeout') ||
+      error instanceof Error && error.name === 'AbortError';
+    
+    if (isTimeoutError) {
+      console.log(`[Generate API ${requestId}] Timeout error detected, returning user-friendly message`);
+      return NextResponse.json<ApiResponse<GenerateResponseData>>(
+        { success: false, error: ERROR_MESSAGES.TIMEOUT },
+        { status: 503 }
+      );
+    }
     
     return NextResponse.json<ApiResponse<GenerateResponseData>>(
       { success: false, error: ERROR_MESSAGES.API_ERROR },

@@ -19,7 +19,7 @@
  * - Stripe付费功能（onUpgrade props）
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { Header } from '@/components/Header';
 import { ImageUploader } from '@/components/ImageUploader';
@@ -63,7 +63,7 @@ export default function HomePage() {
   const { cropFace, isLoading: isCropLoading } = useFaceCrop();
 
   // 防止重复提交的ref
-  const isGeneratingRef = useState(false)[1];
+  const isGeneratingRef = useRef(false);
 
   // ========== 回调函数 ==========
 
@@ -85,6 +85,9 @@ export default function HomePage() {
     setFaceAnalysis(null);
 
     try {
+      // 保存原始图像（用于喉结检测等需要完整图像的分析）
+      const originalImage = base64;
+      
       // 自动裁剪人脸
       const result = await cropFace(base64);
       if (result.success && result.croppedImage) {
@@ -97,9 +100,18 @@ export default function HomePage() {
         }
         
         // 全面人脸分析（包含肤色、发色、眼睛颜色、人种、头发特征等）
-        const analysis = await analyzeFace(result.croppedImage);
+        // 使用原始图像而非裁剪图像，以便检测喉结等需要完整图像的特征
+        const analysis = await analyzeFace(originalImage);
         setFaceAnalysis(analysis);
         console.log('[Page] Face analysis result:', analysis);
+        
+        // 如果人脸检测失败，提示用户更换照片
+        if (!analysis.faceDetected) {
+          setError('Face detection failed. The photo recognition rate may be low. Please try a clearer photo with a visible face.');
+          setSelectedImage(null);
+          setFaceAnalysis(null);
+          return;
+        }
       } else {
         setError(result.error || 'Face cropping failed');
         setSelectedImage(null);

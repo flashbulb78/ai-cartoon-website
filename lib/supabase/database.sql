@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS public.generations (
 -- 3. 创建索引以提高查询性能
 CREATE INDEX IF NOT EXISTS idx_generations_user_id ON public.generations(user_id);
 CREATE INDEX IF NOT EXISTS idx_generations_created_at ON public.generations(created_at DESC);
+-- 复合索引：加速按用户ID查询并按创建时间排序的查询
+CREATE INDEX IF NOT EXISTS idx_generations_user_created ON public.generations(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_profiles_stripe_customer ON public.profiles(stripe_customer_id);
 
 -- 4. 启用行级安全（RLS）
@@ -283,4 +285,36 @@ CREATE POLICY "Admins can view own record" ON public.admins
     FOR SELECT USING (auth.uid() = user_id);
 
 CREATE POLICY "Service role can manage admins" ON public.admins
+    FOR ALL USING (true);
+
+-- =====================================================
+-- 15. 创建代码修改记录表（code_changes）
+-- 用于记录每次代码修改，支持准确回退到某次修改
+-- =====================================================
+CREATE TABLE IF NOT EXISTS public.code_changes (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    file_path TEXT NOT NULL,                      -- 修改的文件路径，如 'lib/faceAnalysis.ts'
+    change_type TEXT NOT NULL,                    -- 修改类型：'feature_add' | 'bug_fix' | 'rollback' | 'refactor' | 'optimization'
+    change_title TEXT NOT NULL,                   -- 修改标题，简短描述
+    change_description TEXT,                      -- 详细描述，说明修改内容和原因
+    is_rollback_point BOOLEAN DEFAULT FALSE,     -- 是否为回滚点（可作为回退目标）
+    git_commit_hash TEXT,                         -- 关联的 Git commit hash（可选）
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_by TEXT                              -- 修改者标识（可以是用户名或 'system'）
+);
+
+-- 创建索引
+CREATE INDEX IF NOT EXISTS idx_code_changes_file_path ON public.code_changes(file_path);
+CREATE INDEX IF NOT EXISTS idx_code_changes_created_at ON public.code_changes(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_code_changes_rollback ON public.code_changes(is_rollback_point) WHERE is_rollback_point = true;
+
+-- 启用RLS
+ALTER TABLE public.code_changes ENABLE ROW LEVEL SECURITY;
+
+-- RLS策略：所有人都可以查看代码修改记录
+CREATE POLICY "Anyone can read code changes" ON public.code_changes
+    FOR SELECT USING (true);
+
+-- RLS策略：服务端可以插入和删除记录
+CREATE POLICY "Service role can manage code changes" ON public.code_changes
     FOR ALL USING (true);
