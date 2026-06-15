@@ -1250,8 +1250,8 @@ export async function analyzeFace(
 
     // 使用与 useFaceCrop 相同的配置
     const faceDetectorOptions = new faceapi.TinyFaceDetectorOptions({
-      inputSize: 320,
-      scoreThreshold: 0.5,
+      inputSize: 416,  // 与 useFaceCrop 保持一致
+      scoreThreshold: 0.4,  // 折中值，平衡检测灵敏度和准确性
     });
     const detections = await faceapi.detectAllFaces(img, faceDetectorOptions);
     console.log('[FaceAnalysis] Detections:', detections.length);

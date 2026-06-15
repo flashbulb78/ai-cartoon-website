@@ -818,7 +818,7 @@ function getLightestSkinColor(
 
   // 分析整个面部区域的亮度分布，判断是否为深肤色
   // 深肤色像素亮度通常在 15-45 范围
-  const analyzeFaceBrightnessDistribution = (): { darkPixelRatio: number; avgBrightness: number } => {
+  const analyzeFaceBrightnessDistribution = (): { darkPixelRatio: number; avgBrightness: number; brightnessVariance: number } => {
     // 定义面部区域：使用特征点确定上下左右边界
     const faceTop = Math.max(0, Math.min(pos[19].y, pos[24].y, pos[41].y, pos[46].y) - eyeDistance * 0.3);
     const faceBottom = Math.min(h, Math.max(pos[8].y, pos[57].y, pos[58].y, pos[67].y) + eyeDistance * 0.3);
@@ -828,6 +828,7 @@ function getLightestSkinColor(
     let darkPixelCount = 0;  // brightness 15-45 范围内的像素
     let totalPixelCount = 0;
     let brightnessSum = 0;
+    let brightnessSquaredSum = 0;  // 用于计算方差
     
     // 每4个像素采样一次以减少计算量
     const stride = 4;
@@ -843,6 +844,7 @@ function getLightestSkinColor(
         
         const brightness = (r + g + b) / 3;
         brightnessSum += brightness;
+        brightnessSquaredSum += brightness * brightness;
         totalPixelCount++;
         
         // 深肤色像素亮度范围：15-45
@@ -853,6 +855,10 @@ function getLightestSkinColor(
     }
     
     const avgBrightness = totalPixelCount > 0 ? brightnessSum / totalPixelCount : 128;
+    // 方差 = E[X^2] - E[X]^2
+    const avgBrightnessSquared = totalPixelCount > 0 ? brightnessSquaredSum / totalPixelCount : 0;
+    const brightnessVariance = avgBrightnessSquared - (avgBrightness * avgBrightness);
+    
     const darkPixelRatio = totalPixelCount > 0 ? darkPixelCount / totalPixelCount : 0;
     
     console.log('[SkinColor] Face brightness distribution:', {
@@ -860,13 +866,14 @@ function getLightestSkinColor(
       darkPixelCount,
       totalPixelCount,
       darkPixelRatio: (darkPixelRatio * 100).toFixed(1) + '%',
-      avgBrightness: avgBrightness.toFixed(1)
+      avgBrightness: avgBrightness.toFixed(1),
+      brightnessVariance: brightnessVariance.toFixed(1)
     });
     
-    return { darkPixelRatio, avgBrightness };
+    return { darkPixelRatio, avgBrightness, brightnessVariance };
   };
   
-  const { darkPixelRatio, avgBrightness: faceAvgBrightness } = analyzeFaceBrightnessDistribution();
+  const { darkPixelRatio, avgBrightness: faceAvgBrightness, brightnessVariance } = analyzeFaceBrightnessDistribution();
   
   const forehead = sampleRegion(foreheadCenterX, foreheadCenterY, 'forehead');
   // 注意：下巴区域已移除，因为可能被胡须覆盖干扰肤色检测
@@ -939,7 +946,7 @@ function getLightestSkinColor(
                              darkPixelRatio > 0.05;
   const useAvgForDark = (lightest.brightness > avgBrightness * 1.1 && avgBrightness < 100) || 
                         (avgBrightness < 100) || 
-                        (darkPixelRatio > 0.30) || 
+                        (darkPixelRatio > 0.30 && brightnessVariance < 500) ||  // 高方差=patchy(老年斑), 低方差=均匀深肤色 
                         (chinBrightness < 80 && avgBrightness < 100) ||
                         (foreheadTooDark && chinBrightness < 100) ||
                         noseHasReflection ||
