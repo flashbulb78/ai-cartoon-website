@@ -31,7 +31,15 @@ export function detectBeardLocal(
   // 胡须主要生长在下巴下半部分，所以只采样这个区域
   const chinCenterX = (pos[6].x + pos[8].x + pos[10].x) / 3;
   // 下巴中心点向下偏移，避免嘴唇线
-  const chinCenterY = pos[8].y + (pos[8].y - (pos[3].y + pos[4].y) / 2) * 0.3;
+  let chinCenterY = pos[8].y + (pos[8].y - (pos[3].y + pos[4].y) / 2) * 0.3;
+  
+  // [Rollback Point 15] 安全检查：确保下巴中心在图像边界内
+  // 如果下巴中心超出图像，说明人脸可能部分在图像外或照片构图问题
+  // 使用安全的上限值
+  if (chinCenterY > height - 20) {
+    console.log(`[BeardDetect] [WARNING] chinCenterY=${chinCenterY.toFixed(1)} exceeds image height=${height}, using safe value`);
+    chinCenterY = height - 20;
+  }
   
   // 调试：显示下巴采样区域
   console.log(`[BeardDetect] Chin sampling region: chinCenter=(${chinCenterX.toFixed(1)}, ${chinCenterY.toFixed(1)}), y range: ${chinCenterY.toFixed(1)} to ${(chinCenterY + 25).toFixed(1)}, x range: ${(chinCenterX - 30).toFixed(1)} to ${(chinCenterX + 30).toFixed(1)}`);
@@ -88,6 +96,10 @@ export function detectBeardLocal(
   const darkPixelRatio = chinTotalPixels > 0 ? chinDarkPixels / chinTotalPixels : 0;
   
   console.log(`[BeardDetect] Chin avg brightness: ${avgChinBrightness.toFixed(1)}, Forehead: ${avgForeheadBrightness.toFixed(1)}, Ratio: ${brightnessRatio.toFixed(2)}, Dark pixels: ${(darkPixelRatio * 100).toFixed(1)}%`);
+  
+  // ========== [DEBUG] 下巴取样区域详细诊断 ==========
+  // 注意：此诊断代码放在这里是为了在textureRatio计算之后使用
+  // 收集下巴区域的亮度分布，用于诊断
   
   // ========== 花白/灰色胡须检测增强 ==========
   // 花白胡须的亮度可能接近甚至高于皮肤，不能仅依赖暗像素检测
@@ -171,6 +183,40 @@ export function detectBeardLocal(
   
   console.log(`[BeardDetect] Texture - chin: ${(chinTextureRatio * 100).toFixed(1)}%, rightCheek: ${(rightCheekTextureRatio * 100).toFixed(1)}%, forehead: ${(foreheadTextureRatio * 100).toFixed(1)}%, ratioCheek: ${textureRatioCheek.toFixed(2)}, ratioForehead: ${textureRatioForehead.toFixed(2)}, final: ${textureRatio.toFixed(2)}${usingForeheadRatio ? ' (using forehead)' : ''}`);
   
+  // ========== [DEBUG] 下巴取样区域详细诊断 ==========
+  // 收集下巴区域的亮度分布，用于诊断
+  const brightnessBuckets = { dark: 0, medium: 0, light: 0, bright: 0 }; // <80, 80-140, 140-180, >180
+  const chinSampleTop = Math.floor(chinCenterY);
+  const chinSampleBottom = Math.floor(chinCenterY + 25);
+  const chinSampleLeft = Math.floor(chinCenterX - 30);
+  const chinSampleRight = Math.floor(chinCenterX + 30);
+  
+  for (let y = chinSampleTop; y < chinSampleBottom; y += 2) {
+    for (let x = chinSampleLeft; x < chinSampleRight; x += 2) {
+      if (x >= 0 && x < width && y >= 0 && y < height) {
+        const idx = (y * width + x) * 4;
+        const brightness = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+        if (brightness < 80) brightnessBuckets.dark++;
+        else if (brightness < 140) brightnessBuckets.medium++;
+        else if (brightness < 180) brightnessBuckets.light++;
+        else brightnessBuckets.bright++;
+      }
+    }
+  }
+  
+  const totalBucketPixels = brightnessBuckets.dark + brightnessBuckets.medium + brightnessBuckets.light + brightnessBuckets.bright;
+  console.log(`[BeardDetect] [DIAGNOSTIC] Chin sampling region: y[${chinSampleTop}-${chinSampleBottom}], x[${chinSampleLeft}-${chinSampleRight}], imageSize=${width}x${height}`);
+  if (totalBucketPixels === 0) {
+    console.log(`[BeardDetect] [DIAGNOSTIC] WARNING: No pixels sampled! This indicates the sampling region is outside image bounds. chinCenterY=${chinCenterY.toFixed(1)}, imageHeight=${height}`);
+  }
+  console.log(`[BeardDetect] [DIAGNOSTIC] Brightness distribution: dark(<80)=${brightnessBuckets.dark}(${totalBucketPixels > 0 ? (brightnessBuckets.dark/totalBucketPixels*100).toFixed(1) : '0.0'}%), medium(80-140)=${brightnessBuckets.medium}(${totalBucketPixels > 0 ? (brightnessBuckets.medium/totalBucketPixels*100).toFixed(1) : '0.0'}%), light(140-180)=${brightnessBuckets.light}(${totalBucketPixels > 0 ? (brightnessBuckets.light/totalBucketPixels*100).toFixed(1) : '0.0'}%), bright(>180)=${brightnessBuckets.bright}(${totalBucketPixels > 0 ? (brightnessBuckets.bright/totalBucketPixels*100).toFixed(1) : '0.0'}%)`);
+  
+  // 诊断：如果下巴大部分是亮像素(>180)且亮度比接近1.0，可能是花白胡子或无胡子
+  if (totalBucketPixels > 0 && brightnessBuckets.bright / totalBucketPixels > 0.5 && brightnessRatio > 0.95 && brightnessRatio < 1.15) {
+    console.log(`[BeardDetect] [DIAGNOSTIC] WARNING: Chin is mostly bright pixels with ratio ~1.0. This pattern suggests: (1) No beard OR (2) Light colored beard that doesn't create texture. Current beard detection may fail.`);
+    console.log(`[BeardDetect] [DIAGNOSTIC] To detect light beard, we need textureRatio > 2.20 but got ${textureRatio.toFixed(2)}, chinTextureRatio > 5% but got ${(chinTextureRatio * 100).toFixed(1)}%`);
+  }
+  
   // 判断标准：
   // 1. 传统方法：下巴亮度明显低于额头 + 暗像素（检测黑色/深色胡须）
   //    注意：由于下巴阴影会导致误判，亮度检测需要与高纹理检测结合
@@ -190,8 +236,9 @@ export function detectBeardLocal(
   // 优化：降低textureRatio要求以适应络腮胡情况
   // 添加亮度要求：只有下巴比额头暗时（brightnessRatio < 0.80）才根据textureRatio判断有胡子
   // 避免下巴很亮（无胡子）但textureRatio高的情况误判为有胡子
-  const hasBeardByTexture = (brightnessRatio < 0.80 && textureRatio > 2.50 && chinTextureRatio > 0.99) || 
-                           (brightnessRatio < 0.80 && textureRatio > 2.20 && chinTextureRatio > 0.97 && darkPixelRatio > 0.15);
+  // [Rollback Point 17] 添加上限检查：textureRatio 过高(>50)可能是阴影或图像问题，不是真正的胡子
+  const hasBeardByTexture = (brightnessRatio < 0.80 && textureRatio > 2.50 && textureRatio < 50 && chinTextureRatio > 0.99) || 
+                           (brightnessRatio < 0.80 && textureRatio > 2.20 && textureRatio < 50 && chinTextureRatio > 0.97 && darkPixelRatio > 0.15);
   // 传统绝对纹理检测：下巴纹理需要比参考区域强一定比例，且下巴纹理本身要足够强
   const hasBeardByAbsoluteTexture = chinTextureRatio > 0.45 && textureRatio > 1.80 && textureRatio < 4.50 && darkPixelRatio > darkPixelThreshold;
   
@@ -234,13 +281,17 @@ export function detectBeardLocal(
   
   console.log(`[BeardDetect] Color uniformity: darkPixelUniformity=${(darkPixelUniformity * 100).toFixed(1)}%, avgColorDeviation=${avgColorDeviation.toFixed(1)}`);
   
+  // [ROLLBACK POINT 8] 花白胡子检测阈值修复
+  // 问题：brightnessRatio < 1.35 太严格，无法检测到亮度差异超过 35% 的花白胡子
+  // 回滚：将 1.35 改回 1.35
+  
   // 浅色胡须检测（花白胡须）：下巴比额头亮但纹理明显
   // 花白胡须亮度高不会被记为暗像素，但纹理仍然明显
   // 降低阈值：chinTextureRatio > 0.05 (5%) 以适应短茬胡须
   // 修复：如果额头亮度很低（<80），说明额头参考被头发/眉毛污染，不应使用此检测
   // 这种情况下的高brightnessRatio是因为额头被污染，而不是真的有浅色胡须
-  // 重要：如果brightnessRatio过高(>1.35)且下巴极亮(>200)，可能是咧嘴笑露出的牙齿，不是浅色胡子
-  const hasBeardByLightColor = avgForeheadBrightness > 80 && brightnessRatio > 1.0 && brightnessRatio < 1.35 && 
+  // 重要：如果brightnessRatio过高(>1.70)且下巴极亮(>200)，可能是咧嘴笑露出的牙齿，不是浅色胡子
+  const hasBeardByLightColor = avgForeheadBrightness > 80 && brightnessRatio > 1.0 && brightnessRatio < 1.70 && 
                                 avgChinBrightness < 200 && textureRatio > 2.20 && chinTextureRatio > 0.05;
   
   console.log(`[BeardDetect] Light beard check: brightnessRatio=${brightnessRatio.toFixed(2)}, textureRatio=${textureRatio.toFixed(2)}, chinTextureRatio=${(chinTextureRatio * 100).toFixed(1)}%, hasLightBeard=${hasBeardByLightColor}`);

@@ -65,7 +65,8 @@ function detectGenderEnhanced(
   jawLine: 'soft' | 'sharp' | 'medium' = 'medium',
   lipShape: 'full' | 'thin' | 'medium' = 'medium',
   hasEarrings: boolean = false,
-  hasNecklace: boolean = false
+  hasNecklace: boolean = false,
+  beardLength?: 'short' | 'medium' | 'long'
 ): { gender: 'male' | 'female' | null; confidence: number } {
   const pos = landmarks.positions;
   
@@ -76,8 +77,16 @@ function detectGenderEnhanced(
   //胡子检测已改进，假阳性概率大大降低
   
   // 第二层：长发检测（女性特征）- 但如果有胡须，长发可能不是女性特征
+  // [Rollback Point 16] 修复：当 hasBeard=true + beardLength='short' 时，给更高的 maleScore
+  // 问题：hasBeard=true + beardLength='short' + hairLength='medium' + shoulderRatio=0.94 时
+  //       错误地给 femaleScore += 0.3，认为是披肩发
+  // 原因：黑人卷发会导致高 shoulderRatio，但不是披肩发
   if (hasBeard) {
-    if (hairLength === 'long' || hairLength === 'very_long') {
+    // [Rollback Point 16] 短胡子是最强的男性特征，无论 hairLength 和 shoulderRatio 如何
+    if (beardLength === 'short') {
+      maleScore += 0.85;  // 短胡子给非常高的男性分数
+      // 即使 hairLength='long' 或 shoulderRatio 高，也不再给 femaleScore
+    } else if (hairLength === 'long' || hairLength === 'very_long') {
       // 有胡须但同时有长发，可能是头发遮住下巴而不是真的有胡子
       // 但如果真的检测到胡子，还是给一些男性分数
       maleScore += 0.2;
@@ -86,8 +95,11 @@ function detectGenderEnhanced(
       // 中等长度头发+肩膀有头发，可能是披肩发遮住下巴，不是真正的胡子
       femaleScore += 0.3;  // 披肩发是女性特征
     } else if (hairLength === 'short' || hairLength === 'very_short') {
-      // 短发+有胡子 = 明确的男性特征
-      maleScore += 0.5;
+      // [ROLLBACK POINT 11] 修复性别检测问题
+        // 问题：maleScore=0.5 与 lipShape='full' 的 femaleScore=0.5 相同，导致平局
+        // 原因：hasBeard=true + hairLength='short' 是非常明确的男性特征
+        // 解决方案：提高 maleScore 加分（从 0.5 提高到 0.8），因为短胡子是最强的男性特征之一
+      maleScore += 0.8;  // 提高短发胡子的男性分数权重
     } else {
       // 其他情况（中等长度但肩膀无头发），给maleScore加0.4分
       maleScore += 0.4;
@@ -598,27 +610,33 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
   
   // 降低阈值：landmarkScore >= 3 即可确认有眼镜
   const hasGlassesByLandmarks = landmarkScore >= 3;
-  // 降低边缘阈值：从 0.22 降到 0.10
+  // [Rollback Point 19] 新增：当landmarkScore >= 2且其他证据也支持时，信任landmark检测
+  // 这解决了微笑导致edgeThreshold过高的问题
+  const hasGlassesByStrongLandmarks = landmarkScore >= 2 && frameEdgeScore > 0.30 && lensBrightness < 200;
+  // 降低边缘阈值：从 0.50 降到 0.45
   // 但如果 landmarkScore=0，说明没有眼镜特征，只根据边缘判断不可靠
-  // 需要提高阈值：landmarkScore > 0 时，frameEdgeScore > 0.50 才判定有眼镜（0.10过低导致误检）
+  // 需要提高阈值：landmarkScore > 0 时，frameEdgeScore > 0.45 才判定有眼镜
   // landmarkScore=0 时仍需要较高阈值 0.80
   // 重要：如果chinBrightness > 180（咧嘴笑露出牙齿），说明可能是误检，提高阈值到0.90
   const isSmiling = chinBrightness > 180;
-  const edgeThreshold = isSmiling ? 0.90 : 0.50;
+  const edgeThreshold = isSmiling ? 0.90 : 0.45;
   console.log('[DetectGlasses] Debug: landmarkScore=', landmarkScore, 'frameEdgeScore=', frameEdgeScore.toFixed(3), 'edgeThreshold=', edgeThreshold, 'chinBrightness=', chinBrightness.toFixed(1), 'lensBrightness=', lensBrightness.toFixed(1));
   const hasGlassesByEdges = (landmarkScore > 0 && frameEdgeScore > edgeThreshold) || (landmarkScore === 0 && frameEdgeScore > 0.80);
   
   // 深色皮肤+深色镜框的特殊情况：
-  // 如果镜片非常暗(<65)且下巴不亮(非微笑露齿)，即使frameEdgeScore较低也可能是深色镜框
+  // 如果镜片非常暗(<55)且下巴不亮(非微笑露齿)，即使frameEdgeScore较低也可能是深色镜框
   // 这是因为深色镜框和深色皮肤对比度低，导致边缘检测得分低
-  const isDarkSkinWithDarkGlasses = !isSmiling && lensBrightness < 65 && landmarkScore > 0 && frameEdgeScore > 0.20;
+  // [Rollback Point 18] 修复：降低阈值从65到55，避免深色皮肤误检测为眼镜
+  const isDarkSkinWithDarkGlasses = !isSmiling && lensBrightness < 55 && landmarkScore > 0 && frameEdgeScore > 0.20;
   console.log('[DetectGlasses] Dark skin with dark glasses fallback:', isDarkSkinWithDarkGlasses);
   
-  if (hasGlassesByLandmarks || hasGlassesByEdges || isDarkSkinWithDarkGlasses) {
+  if (hasGlassesByLandmarks || hasGlassesByStrongLandmarks || hasGlassesByEdges || isDarkSkinWithDarkGlasses) {
     // 有镜框，检测是普通眼镜还是太阳镜
     // 只有当检测到镜框时，才根据镜片亮度判断是否是太阳镜
-    // 如果镜片暗（<80）判定为太阳镜，否则为普通眼镜
-    if (lensBrightness < 80) {
+    // 如果镜片暗（<135）判定为太阳镜，否则为普通眼镜
+    // 注意：127.5对于深色太阳镜来说是比较暗的（相比正常皮肤亮度140-180）
+    // 皮肤鼻子区域亮度145.4，镜片127.5比皮肤暗，说明有太阳镜效果
+    if (lensBrightness < 135) {
       console.log('[DetectGlasses] Sunglasses detected, lens brightness:', lensBrightness.toFixed(1), 'frameEdgeScore:', frameEdgeScore.toFixed(3));
       return { hasGlasses: true, glassesType: 'sunglasses' };
     }
@@ -928,7 +946,7 @@ function hasChinBeardTexture(imageData: ImageData, landmarks: faceapi.FaceLandma
 /**
  * 检测头发长度 - 只检测头部上方的头发，排除胡须干扰
  */
-function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmarks68, hasBeard?: boolean): { length: HairLength; confidence: number; shoulderRatio: number } {
+function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmarks68, hasBeard?: boolean, hairShape?: HairShape, beardLength?: HairLength): { length: HairLength; confidence: number; shoulderRatio: number } {
   const { data, width, height } = imageData;
   
   // 如果有 landmarks，结合方案1和方案2：扫描整个头部区域但排除面部中心
@@ -984,11 +1002,14 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
     let beardRegionTop = 0;
     let beardRegionBottom = 0;
     if (cheekBeard) {
-      // 胡须区域：下巴下方到脸颊两侧
+      // 胡须区域：下巴下方到下颌两侧
+      // 使用pos[3-5]和pos[11-13]（下颌点）而非pos[0-2]和pos[14-16]（脸颊点）
+      // 因为络腮胡主要分布在下巴和下颌区域
+      // [FIXED] 2024-06-17: 修复前使用pos[0-2]和pos[14-16]（脸颊点），导致排除区域不准确
       beardRegionTop = chinY + 10;
       beardRegionBottom = Math.min(height, chinY + 150);
-      beardRegionLeft = Math.min(pos[0].x, pos[1].x, pos[2].x) - 20;
-      beardRegionRight = Math.max(pos[14].x, pos[15].x, pos[16].x) + 20;
+      beardRegionLeft = Math.min(pos[3].x, pos[4].x, pos[5].x) - 20;
+      beardRegionRight = Math.max(pos[11].x, pos[12].x, pos[13].x) + 20;
     }
     
     // 太阳穴区域扫描 - 用于检测披肩发从发际线沿太阳穴下垂
@@ -1091,9 +1112,9 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
     const topRatio = topTotalPixels > 0 ? topHairPixels / topTotalPixels : 0;
     const shoulderRatio = shoulderTotalPixels > 0 ? shoulderHairPixels / shoulderTotalPixels : 0;
     
-    // 太阳穴区域对于披肩发检测至关重要：头发从发际线沿太阳穴下垂
-    // 加权计算最终hairRatio：头顶20%，太阳穴40%，肩膀40%
-    // 太阳穴区域权重最高，因为这是披肩发最明显的特征区域
+    // [ROLLED BACK] 2024-06-17: 回滚方案2
+    // 原因：提高templeRatio权重导致某些男性短发被误判为long
+    // [ORIGINAL]
     const hairRatio = topRatio * 0.2 + templeRatio * 0.4 + shoulderRatio * 0.4;
     
     console.log(`[HairLength] Hair region: topRatio=${topRatio.toFixed(3)}(${topHairPixels}/${topTotalPixels}), templeRatio=${templeRatio.toFixed(3)}(${templeHairPixels}/${templeTotalPixels}), shoulderRatio=${shoulderRatio.toFixed(3)}(${shoulderHairPixels}/${shoulderTotalPixels}), finalRatio=${hairRatio.toFixed(3)}`);
@@ -1103,29 +1124,104 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
     // 根据头发像素比例判断长度（调整阈值以更好检测长发）
     // 特殊处理：如果头顶和太阳穴都没有头发但肩膀区域有，说明可能是背景干扰
     
+    // [ROLLBACK POINT 1] 蓬松卷发检测优化
+    // 当HairShape=curly时，降低templeBelowChinRatio阈值，因为蓬松卷发不会从太阳穴垂直下垂
+    // 蓬松卷发特征：templeRatio较高(>0.35)但templeBelowChinRatio很低(<0.02)
+    const isCurlyHair = hairShape === 'curly';
+    const belowChinThreshold = isCurlyHair ? 0.02 : 0.1; // 卷发降低阈值
+    
     // 优先检查templeRatio：因为长发女性即使hairRatio低，templeRatio也可能很高
-    if (!hasBeard && templeRatio >= 0.55) {
+    if (!hasBeard && templeRatio >= 0.55 && templeBelowChinRatio > belowChinThreshold) {
       return { length: 'long', confidence: 0.7, shoulderRatio };
+    }
+
+    // [ROLLBACK POINT 2] 蓬松卷发检测优化 - 第二阶段 (已回滚)
+    // 回滚原因：白人长发样本templeBelowChinRatio=0.516过高，不应触发medium判断
+    // 卷发样本：templeRatio=0.363, templeBelowChinRatio=0.013, hairRatio=0.145
+    // if (isCurlyHair && hairRatio > 0.10 && hairRatio < 0.25 && templeRatio > 0.35 && templeBelowChinRatio < 0.15 && shoulderRatio > 0.03) {
+    //   console.log(`[HairLength] Curly hair medium detection: hairRatio=${hairRatio.toFixed(3)}, templeRatio=${templeRatio.toFixed(3)}, templeBelowChinRatio=${templeBelowChinRatio.toFixed(3)}, shoulderRatio=${shoulderRatio.toFixed(3)}`);
+    //   return { length: 'medium', confidence: 0.6, shoulderRatio };
+    // }
+    
+    // [ROLLBACK POINT 5] 蓬松卷发头发长度优化
+    // 蓬松卷发特征：templeRatio较高(>0.35)但shoulderRatio很低，头发向两侧蓬松不下垂
+    // 白人女性长发：templeRatio=0.431, shoulderRatio=0.045, hairRatio=0.191
+    // 黑人女性卷发：templeRatio=0.363, shoulderRatio=0.000, hairRatio=0.145
+    // 策略：当templeRatio>0.35但shoulderRatio<0.05时，说明头发蓬松但不下垂，应该是medium
+    if (isCurlyHair && templeRatio > 0.35 && shoulderRatio < 0.05 && !hasBeard) {
+      console.log(`[HairLength] Curly hair medium detection [ROLLBACK POINT 5]: templeRatio=${templeRatio.toFixed(3)}, shoulderRatio=${shoulderRatio.toFixed(3)}, hairRatio=${hairRatio.toFixed(3)}`);
+      return { length: 'medium', confidence: 0.6, shoulderRatio };
     }
     
     // 先判断基本长度
     if (hairRatio < 0.05) return { length: 'bald', confidence: 0.7, shoulderRatio };
     if (hairRatio < 0.15) return { length: 'very_short', confidence: 0.65, shoulderRatio };
+    
+    // [ROLLBACK POINT 14] 披肩发检测优化 - 提前检查
+    // 问题：hairRatio < 0.30 在 line 1171 返回 short，导致后续 templeRatio 检查无法执行
+    // 解决：在返回 short 之前，先检查是否是披肩发（templeRatio >= 0.35 && templeBelowChinRatio >= 0.5）
+    if (!hasBeard && templeRatio >= 0.35 && templeBelowChinRatio >= 0.5) {
+      console.log(`[HairLength] Rollback Point 14 - Shoulder-length hair detected: templeRatio=${templeRatio.toFixed(3)}, templeBelowChinRatio=${templeBelowChinRatio.toFixed(3)}`);
+      return { length: 'long', confidence: 0.65, shoulderRatio };
+    }
+    
+    // [ROLLBACK POINT 10] 修复短胡子时头发长度误判问题
+      // 问题：当 beardLength='short' 时，hairRatio=0.373 被误判为 medium
+      // 原因：hairRatio 加权公式受 templeRatio 和 shoulderRatio 影响较大
+      //       对于短头发+短胡子的人，这些区域的测量值可能偏高（胡须干扰）
+      // 解决方案：当 beardLength='short' 时，使用更严格的阈值
+      //       - topRatio 作为主要判断依据（头顶区域最能反映真实头发长度）
+      //       - 降低 short 的上限阈值
+    
+    // 当有短胡子时，头发更可能是短的，使用 topRatio 作为主要判断依据
+    const isShortBeard = hasBeard && (beardLength === 'short' || beardLength === 'very_short');
+    if (isShortBeard) {
+      // 对于短胡子，主要依赖 topRatio 判断
+      // topRatio 高表示头发集中在头顶（短），topRatio 低表示头发下垂（长）
+      if (topRatio < 0.30) {
+        return { length: 'medium', confidence: 0.65, shoulderRatio }; // 头顶头发少，可能是长发下垂
+      }
+      // topRatio 足够高，头发在头顶，是短发
+      if (hairRatio < 0.40) {
+        return { length: 'short', confidence: 0.7, shoulderRatio };
+      }
+      if (hairRatio < 0.60) {
+        return { length: 'medium', confidence: 0.65, shoulderRatio };
+      }
+      return { length: 'long', confidence: 0.6, shoulderRatio };
+    }
+    
     if (hairRatio < 0.30) return { length: 'short', confidence: 0.7, shoulderRatio };
+    
+    // [ROLLBACK POINT 14] 修复披肩发检测问题
+      // 问题：白人女性披肩发 templeRatio=0.431 < 0.45，被误判为 medium
+      // 原因：披肩发的头发主要垂在肩上而不是太阳穴两侧，导致 templeRatio 不够高
+      // 解决方案：调整 templeBelowChinRatio 阈值，使披肩发更容易被判定为 long
+    
+    // [ROLLBACK POINT 9] 修复头发长度误判问题
+      // 问题：当胡子是 short 时，templeBelowChinRatio >= 0.10 会误判为 long
+      // 原因：下巴以下的太阳穴区域检测到的是胡子（尤其是络腮胡），而非长发
+      // 解决方案：当 beardLength 为 short 或 very_short 时，提高 templeBelowChinRatio 阈值或忽略该判断
     
     // medium和long的区分：当hairRatio在0.30-0.75范围时，根据templeRatio调整
     if (hairRatio < 0.75) {
       // 有胡子时，低阈值即可升级（因为有胡子时长发更可能是披肩发）
-      if (hasBeard && templeBelowChinRatio >= 0.10) {
+      // 但如果胡子是短的，应该提高阈值或忽略 templeBelowChinRatio 判断
+      // beardLength 参数通过函数签名传入（见下方函数定义）
+      const effectiveTempleThreshold = (hasBeard && beardLength === 'short') ? 0.35 : 0.10;
+      if (hasBeard && templeBelowChinRatio >= effectiveTempleThreshold) {
         return { length: 'long', confidence: 0.7, shoulderRatio };
       }
       // 无胡子时，使用templeRatio作为主要指标（长发女性templeRatio更高）
       if (!hasBeard) {
-        if (templeRatio >= 0.55) {
+        if (templeRatio >= 0.55 && templeBelowChinRatio > 0) {
           // templeRatio >= 55% 表示太阳穴区域大部分被头发覆盖，这是长发女性的特征
           return { length: 'long', confidence: 0.7, shoulderRatio };
         }
-        if (templeRatio >= 0.45 && templeBelowChinRatio >= 0.5) {
+        // [ROLLBACK POINT 14] 披肩发检测：头发垂在肩上挡住耳朵，templeRatio可能不够高
+        // 但 templeBelowChinRatio >= 0.5 表示有足够的下垂头发，这是披肩发的特征
+        // 降低 templeRatio 阈值从 0.45 到 0.35
+        if (templeRatio >= 0.35 && templeBelowChinRatio >= 0.5) {
           // templeRatio中等且有足够下垂头发
           return { length: 'long', confidence: 0.65, shoulderRatio };
         }
@@ -1331,12 +1427,12 @@ export async function analyzeFace(
         avgForeheadBrightness > 90 ? 'medium_dark' : 'dark';
       console.log('[FaceAnalysis] Quick skin tone estimate:', quickSkinTone, '(forehead brightness:', avgForeheadBrightness.toFixed(1), ')');
       
-      hairLengthResult = detectHairLength(imageData, landmarks);
-      hairShapeResult = detectHairShape(imageData);
-      bangsResult = detectBangs(imageData);
+      // 先获取胡须检测结果（包含 beardLength）
       beardResult = detectBeardLocal(imageData, landmarks, pos, quickSkinTone);
-      // 检测头发长度，传入hasBeard以避免假阳性的络腮胡检测排除头发
-      hairLengthResult = detectHairLength(imageData, landmarks, beardResult.hasBeard);
+      // [ROLLBACK POINT 9] 检测头发长度，传入hasBeard和beardLength以避免短胡子导致的长发误判
+      // beardLength 可能是 "none"，需要排除以匹配 HairLength 类型
+      const beardLengthForHair: HairLength | undefined = beardResult.beardLength === 'none' ? undefined : beardResult.beardLength as HairLength;
+      hairLengthResult = detectHairLength(imageData, landmarks, beardResult.hasBeard, hairShapeResult.shape, beardLengthForHair);
       hairShapeResult = detectHairShape(imageData);
       bangsResult = detectBangs(imageData);
     }
@@ -1365,7 +1461,10 @@ export async function analyzeFace(
       hairLengthResult.length,
       hairLengthResult.shoulderRatio,
       jawline !== 'unknown' ? jawline : 'medium',
-      lipShape !== 'unknown' ? lipShape : 'medium'
+      lipShape !== 'unknown' ? lipShape : 'medium',
+      undefined, // hasEarrings
+      undefined, // hasNecklace
+      beardResult.beardLength === 'none' ? undefined : beardResult.beardLength as 'short' | 'medium' | 'long'
     );
     console.log('[FaceAnalysis] Enhanced gender result:', genderEnhancedResult);
     
@@ -1385,6 +1484,10 @@ export async function analyzeFace(
     const colorAttributes = options?.skipColorDetection
       ? defaultResult.colorAttributes
       : await detectColorAttributes(imageBase64, landmarks, undefined, undefined, glassesResult.hasGlasses);
+    
+    // [ROLLBACK POINT 7] 诊断日志 - 用于排查 HMR 导致日志丢失问题
+    // 回滚：删除 "[DIAGNOSTIC] After detectColorAttributes" 日志行
+    console.log('[FaceAnalysis] [DIAGNOSTIC] After detectColorAttributes, colorAttributes:', JSON.stringify(colorAttributes, null, 2));
     
     // 检测人种
     const faceWidth = Math.abs(pos[16].x - pos[0].x);
