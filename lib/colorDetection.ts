@@ -507,7 +507,8 @@ export function detectColorAttributes(
         
         // 如果检测到深肤色信号（useAvgForDark触发或深色像素比例>15%），调整RGB值使其更准确反映真实肤色
         // 原因：isSkinHue过滤掉了深肤色像素，导致采样值偏浅
-        if (skinColor && needsDarkSkinAdjustment) {
+        // [Rollback Point 21] 添加darkPixelRatio > 0.25检查，防止误触发深肤色调整
+        if (skinColor && needsDarkSkinAdjustment && darkPixelRatio > 0.25) {
           const sampledBrightness = (skinColor.r + skinColor.g + skinColor.b) / 3;
           const targetBrightness = 75;  // 深肤色的目标亮度
           const scaleFactor = targetBrightness / sampledBrightness;
@@ -791,9 +792,15 @@ function getLightestSkinColor(
   const foreheadCenterX = (pos[36].x + pos[45].x) / 2;
   // 额头中心：位于眉心上方，距离为眼距的0.35倍（更接近实际额头），有眼镜时用0.6倍（更高以避开镜框和头发）
   // [OPTIMIZED] 2024-06-17: 添加clamp确保额头中心Y坐标在图像范围内，防止超出边界
-  // [ROLLBACK] 如果有问题，改回: const foreheadCenterY = foreheadCenterYRaw;
+  // [Rollback Point 24] 确保采样区域在发际线以上，使用foreheadTopY作为下限约束
+  const foreheadTopY = pos[24].y;  // 发际线位置（眉毛位置）
   const foreheadCenterYRaw = (pos[19].y + pos[24].y) / 2 - eyeDistance * (hasGlasses ? 0.6 : 0.35);
-  const foreheadCenterY = Math.max(regionSize / 2, Math.min(h - regionSize / 2, foreheadCenterYRaw));
+  // 计算采样下限，确保不低于foreheadTopY（发际线）
+  const samplingBottomY = foreheadCenterYRaw - regionSize / 2;
+  // 如果采样下限低于foreheadTopY，说明采样会包含发际线以下区域（包括下垂的头发），需要上移
+  const foreheadCenterYAdjusted = samplingBottomY < foreheadTopY ? foreheadTopY + regionSize / 2 : foreheadCenterYRaw;
+  const foreheadCenterY = Math.max(regionSize / 2, Math.min(h - regionSize / 2, foreheadCenterYAdjusted));
+  console.log('[SkinColor] [Rollback Point 24] Forehead sampling adjusted: foreheadTopY=' + foreheadTopY.toFixed(1) + ', raw=' + foreheadCenterYRaw.toFixed(1) + ', adjusted=' + foreheadCenterYAdjusted.toFixed(1) + ', final=' + foreheadCenterY.toFixed(1));
   
   // 2. 下巴区域 (chin)
   const chinCenterX = (pos[4].x + pos[12].x) / 2;
@@ -985,13 +992,23 @@ function getLightestSkinColor(
     }
   }
   
-  // 计算加权平均亮度（鼻子权重2x，额头权重0.5x）
+  // [Rollback Point 23] 额头被头发覆盖检测（需要在权重计算前定义）
+  const foreheadCoveredByHair = regions.find(r => r.name === 'forehead' && r.brightness < 30);
+  if (foreheadCoveredByHair) {
+    console.log('[SkinColor] [Rollback Point 23] Forehead covered by hair (brightness < 30), excluding from skin color calculation');
+  }
+  
+  // 计算加权平均亮度（鼻子权重2x，额头权重0.5x，但头发覆盖时权重为0）
   let totalBrightness = 0;
   let totalWeight = 0;
   
   for (const region of regions) {
-    const weight = region.name === 'nose' ? 2 : 
-                   region.name === 'forehead' ? 0.5 : 1;
+    let weight = region.name === 'nose' ? 2 : 
+                 region.name === 'forehead' ? 0.5 : 1;
+    // 额头被头发覆盖时，权重设为0
+    if (region.name === 'forehead' && foreheadCoveredByHair) {
+      weight = 0;
+    }
     totalBrightness += region.brightness * weight;
     totalWeight += weight;
   }
@@ -1005,6 +1022,7 @@ function getLightestSkinColor(
   // 新增：如果面部有超过20%的深色像素（亮度15-45），也判定为深肤色
   // 新增：如果下巴亮度<100且平均亮度<130，也判定为深肤色（下巴不易受高光影响，是深肤色的可靠指标）
   // 重要：如果额头亮度非常低（<60）且下巴也暗（<100），说明额头可能被头发覆盖，应使用下巴/平均亮度判断深肤色
+  // [Rollback Point 23] 增强：如果额头亮度极低(<30)，说明被头发完全覆盖（已在前面排除）
   const foreheadTooDark = regions.find(r => r.name === 'forehead' && r.brightness < 60);
   // 检测鼻头高光：如果鼻头亮度比额头高15%以上，且下巴很暗，说明鼻头可能有高光反射
   const noseRegion = regions.find(r => r.name === 'nose');

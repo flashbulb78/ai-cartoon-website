@@ -229,6 +229,35 @@ export function detectBeardLocal(
   // 优化：降低textureRatio阈值以检测络腮胡（脸颊也有胡子导致比值偏低）
   // 男性络腮胡数据：darkPixelRatio=9%, textureRatio=2.13, chinTextureRatio=92.3%
   const darkPixelThreshold = 0.05;  // 降低到5%以检测9%的暗像素
+  // [Rollback Point 25] 如果textureRatio > 4.5且brightnessRatio < 0.5，说明可能是手遮挡而不是真正的胡子
+  // 手部皮肤会导致极高的纹理和暗像素比例，但不是胡子
+  // [Rollback Point 28] 修复：红胡子也会触发 isHandLikeTexture 条件，需要添加颜色检查
+  // 红胡子的下巴颜色通常是 reddish/brownish (r>g>b 且色调在红色/橙色范围)
+  // 手部皮肤是典型的 flesh tone (r>>g>b 但色调偏黄色)
+  // 采样下巴区域中心像素检查颜色
+  let chinCenterR = 0, chinCenterG = 0, chinCenterB = 0, chinCenterCount = 0;
+  for (let y = Math.floor(chinCenterY); y < Math.floor(chinCenterY + 25); y += 3) {
+    for (let x = Math.floor(chinCenterX - 15); x < Math.floor(chinCenterX + 15); x += 3) {
+      if (x >= 0 && x < width && y >= 0 && y < height) {
+        const idx = (y * width + x) * 4;
+        const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+        const brightness = (r + g + b) / 3;
+        if (brightness < 150) { // 只采样暗色像素
+          chinCenterR += r;
+          chinCenterG += g;
+          chinCenterB += b;
+          chinCenterCount++;
+        }
+      }
+    }
+  }
+  const isBeardLikeColor = chinCenterCount > 10 && 
+    (chinCenterR > chinCenterG * 1.1 && chinCenterG > chinCenterB * 0.9); // reddish/brownish
+  const isHandLikeTexture = textureRatio > 4.5 && brightnessRatio < 0.5 && !isBeardLikeColor;
+  if (isHandLikeTexture) {
+    console.log(`[BeardDetect] [Rollback Point 28] Hand-like texture detected: textureRatio=${textureRatio.toFixed(2)}, brightnessRatio=${brightnessRatio.toFixed(2)}, isBeardLikeColor=${isBeardLikeColor}, treating as no beard`);
+    return { hasBeard: false, beardLength: 'none', beardShape: 'unknown', beardColor: 'unknown' };
+  }
   // 增加上限检查：如果textureRatio过高(>4.0)但darkPixelRatio低(<8%)，不触发（可能是头发texture）
   const hasBeardByDarkness = brightnessRatio < 0.75 && darkPixelRatio > darkPixelThreshold && 
                              (textureRatio > 1.80 && textureRatio < 4.50 || darkPixelRatio > 0.80);
@@ -295,6 +324,15 @@ export function detectBeardLocal(
                                 avgChinBrightness < 200 && textureRatio > 2.20 && chinTextureRatio > 0.05;
   
   console.log(`[BeardDetect] Light beard check: brightnessRatio=${brightnessRatio.toFixed(2)}, textureRatio=${textureRatio.toFixed(2)}, chinTextureRatio=${(chinTextureRatio * 100).toFixed(1)}%, hasLightBeard=${hasBeardByLightColor}`);
+  
+  // [Rollback Point 20] 衣服误检保护：如果下巴极暗(brightnessRatio<0.1)且textureRatio极低(<0.5)，可能是衣服误检
+  // 因为胡子即使很短也会有一定的纹理，而衣服（如黑色毛衣）可能完全没有纹理
+  // 注意：这种情况对男女都适用，因为真正的胡子不可能完全没有纹理
+  const isClothingLikeDarkness = brightnessRatio < 0.1 && textureRatio < 0.5;
+  if (isClothingLikeDarkness) {
+    console.log(`[BeardDetect] [Rollback Point 20] Clothing-like darkness detected: brightnessRatio=${brightnessRatio.toFixed(2)}, textureRatio=${textureRatio.toFixed(2)}, treating as no beard`);
+    return { hasBeard: false, beardLength: 'none', beardShape: 'unknown', beardColor: 'unknown' };
+  }
   
   // 使用 OR 组合：满足任一条件即认为有胡须
   const hasBeard = hasBeardByDarkness || hasBeardByTexture || hasBeardByAbsoluteTexture || hasBeardByColorUniformity || hasBeardByLightColor;

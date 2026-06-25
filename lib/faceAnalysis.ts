@@ -954,9 +954,14 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
     const pos = landmarks.positions;
     // 使用发际线位置（pos[19]和pos[24]的Y坐标）作为参考
     const hairlineY = Math.min(pos[19].y, pos[24].y);
-    // 头顶区域：从发际线上方到头顶
-    const hairTop = Math.max(0, hairlineY - 150);
-    const hairBottom = Math.min(height, hairlineY + 30);
+    // [ROLLBACK POINT 27] 修复头顶区域扫描范围 - 添加调试日志
+    console.log(`[HairLength] [DEBUG] hairlineY=${hairlineY.toFixed(1)}, pos[19].y=${pos[19].y.toFixed(1)}, pos[24].y=${pos[24].y.toFixed(1)}, imageSize=${width}x${height}`);
+    // [ROLLBACK POINT 27] 修复头顶区域扫描范围
+    // 原问题：使用 hairlineY - 150 导致 hairTop ≈ 0，扫描区域覆盖不到头发（头发在 y=42-94）
+    // 修复：使用更合理的头顶扫描范围，从发际线上方开始扫描
+    // 注意：头发应该在发际线附近或以上（y值小于hairlineY）
+    const hairTop = Math.max(0, hairlineY - 80); // 从发际线上方80像素开始
+    const hairBottom = Math.min(height, hairlineY + 20); // 发际线下方20像素
     
     // 面部左右边界（用于排除面部中心区域）- 需要clamp到图像边界内
     const faceLeft = Math.max(0, Math.min(pos[0].x, pos[17].x, pos[36].x) - 10);
@@ -1123,6 +1128,21 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
     
     // 根据头发像素比例判断长度（调整阈值以更好检测长发）
     // 特殊处理：如果头顶和太阳穴都没有头发但肩膀区域有，说明可能是背景干扰
+    
+    // [ROLLBACK POINT 26] 束发检测优化
+    // 问题：束发女性的头发被扎在脑后，正面可见的头发很少（templeRatio=0.031, shoulderRatio=0.000）
+    // 导致被误判为bald光头
+    // 原因：HairLength的顶部扫描（x=[25-475]）与实际头发区域（x=[0-94]）不匹配，导致topRatio=0
+    // 但templeRatio=0.031说明有鬓角头发存在
+    // 解决方案：如果hairRatio < 0.05但templeRatio > 0.02，说明有鬓角头发但头顶扫描失败，应该判断为medium而不是bald
+    const hasTempleHair = templeRatio > 0.02 && templeRatio < 0.15; // 鬓角有少量头发
+    const isLowHairRatio = hairRatio < 0.05; // 头顶扫描比例很低（当前检测为bald）
+    
+    if (hasTempleHair && isLowHairRatio && !hasBeard) {
+      console.log(`[HairLength] [ROLLBACK POINT 26] Bun hairstyle detected: templeRatio=${templeRatio.toFixed(3)}, hairRatio=${hairRatio.toFixed(3)}`);
+      // 束发是有一定长度的头发，应该是medium
+      return { length: 'medium', confidence: 0.5, shoulderRatio };
+    }
     
     // [ROLLBACK POINT 1] 蓬松卷发检测优化
     // 当HairShape=curly时，降低templeBelowChinRatio阈值，因为蓬松卷发不会从太阳穴垂直下垂
