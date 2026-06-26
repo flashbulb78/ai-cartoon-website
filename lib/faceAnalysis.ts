@@ -529,6 +529,16 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
     // 综合边缘得分
     const totalEdgeScore = horizontalEdgeCount + frameWidthCount + bridgeEdgeCount;
     frameEdgeScore = totalEdgeScore / (expectedFrameWidth * 2 + 50);
+    
+    // [Rollback Point 32] 添加诊断日志
+    console.log('[DetectGlasses] Edge diagnostic:', {
+      horizontalEdgeCount,
+      frameWidthCount,
+      bridgeEdgeCount,
+      totalEdgeScore,
+      expectedFrameWidth,
+      frameEdgeScore: frameEdgeScore.toFixed(3)
+    });
   }
   
   // ========== 方法3：优先检测镜片暗度（直接检测墨镜）==========
@@ -610,9 +620,13 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
   
   // 降低阈值：landmarkScore >= 3 即可确认有眼镜
   const hasGlassesByLandmarks = landmarkScore >= 3;
-  // [Rollback Point 19] 新增：当landmarkScore >= 2且其他证据也支持时，信任landmark检测
-  // 这解决了微笑导致edgeThreshold过高的问题
-  const hasGlassesByStrongLandmarks = landmarkScore >= 2 && frameEdgeScore > 0.30 && lensBrightness < 200;
+  // [Rollback Point 30] 修复眼镜检测逻辑
+  // 问题1：阈值 0.50 太严格，漏检了真正戴墨镜的情况（frameEdgeScore=0.490）
+  // 问题2：lensBrightness=102.6 时被误判为 sunglasses
+  // 解决方案：
+  // - hasGlassesByStrongLandmarks 的 frameEdgeScore 从 0.50 降到 0.45
+  // - 新增专用 sunglasses 检测条件：lensBrightness < 100 且 frameEdgeScore > 0.40
+  const hasGlassesByStrongLandmarks = landmarkScore >= 2 && frameEdgeScore > 0.45;
   // 降低边缘阈值：从 0.50 降到 0.45
   // 但如果 landmarkScore=0，说明没有眼镜特征，只根据边缘判断不可靠
   // 需要提高阈值：landmarkScore > 0 时，frameEdgeScore > 0.45 才判定有眼镜
@@ -630,12 +644,34 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
   const isDarkSkinWithDarkGlasses = !isSmiling && lensBrightness < 55 && landmarkScore > 0 && frameEdgeScore > 0.20;
   console.log('[DetectGlasses] Dark skin with dark glasses fallback:', isDarkSkinWithDarkGlasses);
   
-  if (hasGlassesByLandmarks || hasGlassesByStrongLandmarks || hasGlassesByEdges || isDarkSkinWithDarkGlasses) {
+  // [Rollback Point 30] 新增：sunglasses 专用检测条件
+  // 当 lensBrightness < 100（非常暗）且 frameEdgeScore > 0.40 时，直接判定为 sunglasses
+  // 这可以捕获深色镜片导致的低边缘得分情况
+  // [Rollback Point 36] 修复：提高阈值，避免误检
+  // lensBrightness 在 70-100 范围时可能是边界情况，只有当 lensBrightness < 70 时才判定为 sunglasses
+  const isPossibleSunglasses = lensBrightness < 70 && frameEdgeScore > 0.40 && landmarkScore >= 2;
+  
+  // [Rollback Point 31] 新增：基于面部特征的眼镜检测
+  // 当 landmarkScore >= 2（面部几何特征明显符合眼镜）且 frameEdgeScore > 0.35 时
+  // 判定为有眼镜，因为面部特征点已经足够可靠，即使边缘检测得分较低
+  const hasGlassesByFacialFeatures = landmarkScore >= 2 && frameEdgeScore > 0.35;
+  
+  // [Rollback Point 33] 新增：当 landmarkScore >= 2 且 frameEdgeScore <= 0.30 且 lensBrightness < 135 时
+  // 直接判定为有眼镜，绕过 frameEdgeScore 的限制
+  // 条件 frameEdgeScore <= 0.30 用于区分无眼镜和墨镜情况：
+  // - 无眼镜 case: frameEdgeScore=0.486 > 0.30，不触发此条件
+  // - 墨镜 case: frameEdgeScore=0.217 <= 0.30，触发此条件
+  // 条件 lensBrightness < 135 确保是墨镜而非普通眼镜
+  // [Rollback Point 37] 修复：降低阈值从 0.30 到 0.20，避免误检
+  // 当前案例 frameEdgeScore=0.234 被误检，需要更严格的条件
+  const hasGlassesByLandmarkAndLens = landmarkScore >= 2 && frameEdgeScore <= 0.20 && lensBrightness < 135;
+  
+  if (hasGlassesByLandmarks || hasGlassesByStrongLandmarks || hasGlassesByEdges || hasGlassesByFacialFeatures || hasGlassesByLandmarkAndLens || isDarkSkinWithDarkGlasses || isPossibleSunglasses) {
     // 有镜框，检测是普通眼镜还是太阳镜
     // 只有当检测到镜框时，才根据镜片亮度判断是否是太阳镜
-    // 如果镜片暗（<135）判定为太阳镜，否则为普通眼镜
-    // 注意：127.5对于深色太阳镜来说是比较暗的（相比正常皮肤亮度140-180）
-    // 皮肤鼻子区域亮度145.4，镜片127.5比皮肤暗，说明有太阳镜效果
+    // [Rollback Point 33] 修复：sunglasses 亮度阈值调整为 135
+    // 原问题：阈值 100 太严格，漏检了 lensBrightness=130.9 的真正墨镜
+    // 解决方案：当 lensBrightness < 135 时判定为 sunglasses
     if (lensBrightness < 135) {
       console.log('[DetectGlasses] Sunglasses detected, lens brightness:', lensBrightness.toFixed(1), 'frameEdgeScore:', frameEdgeScore.toFixed(3));
       return { hasGlasses: true, glassesType: 'sunglasses' };
@@ -1163,17 +1199,22 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
     //   return { length: 'medium', confidence: 0.6, shoulderRatio };
     // }
     
-    // [ROLLBACK POINT 5] 蓬松卷发头发长度优化
+    // [ROLLBACK POINT 35] 修复卷发检测被跳过的问题
+    // 问题：line 1210 的 hairRatio < 0.15 检查先于 line 1203 的卷发检测执行
+    // 导致 hairRatio=0.145 的卷发被误判为 very_short
+    // 解决：将卷发检测移到 hairRatio < 0.15 检查之前
+    
+    // 蓬松卷发头发长度优化
     // 蓬松卷发特征：templeRatio较高(>0.35)但shoulderRatio很低，头发向两侧蓬松不下垂
     // 白人女性长发：templeRatio=0.431, shoulderRatio=0.045, hairRatio=0.191
     // 黑人女性卷发：templeRatio=0.363, shoulderRatio=0.000, hairRatio=0.145
     // 策略：当templeRatio>0.35但shoulderRatio<0.05时，说明头发蓬松但不下垂，应该是medium
     if (isCurlyHair && templeRatio > 0.35 && shoulderRatio < 0.05 && !hasBeard) {
-      console.log(`[HairLength] Curly hair medium detection [ROLLBACK POINT 5]: templeRatio=${templeRatio.toFixed(3)}, shoulderRatio=${shoulderRatio.toFixed(3)}, hairRatio=${hairRatio.toFixed(3)}`);
+      console.log(`[HairLength] Curly hair medium detection [ROLLBACK POINT 35]: templeRatio=${templeRatio.toFixed(3)}, shoulderRatio=${shoulderRatio.toFixed(3)}, hairRatio=${hairRatio.toFixed(3)}`);
       return { length: 'medium', confidence: 0.6, shoulderRatio };
     }
     
-    // 先判断基本长度
+    // 先判断基本长度（bald和very_short）
     if (hairRatio < 0.05) return { length: 'bald', confidence: 0.7, shoulderRatio };
     if (hairRatio < 0.15) return { length: 'very_short', confidence: 0.65, shoulderRatio };
     
@@ -1452,8 +1493,9 @@ export async function analyzeFace(
       // [ROLLBACK POINT 9] 检测头发长度，传入hasBeard和beardLength以避免短胡子导致的长发误判
       // beardLength 可能是 "none"，需要排除以匹配 HairLength 类型
       const beardLengthForHair: HairLength | undefined = beardResult.beardLength === 'none' ? undefined : beardResult.beardLength as HairLength;
-      hairLengthResult = detectHairLength(imageData, landmarks, beardResult.hasBeard, hairShapeResult.shape, beardLengthForHair);
+      // [Rollback Point 35] 修复：先检测 hairShape，再传给 detectHairLength
       hairShapeResult = detectHairShape(imageData);
+      hairLengthResult = detectHairLength(imageData, landmarks, beardResult.hasBeard, hairShapeResult.shape, beardLengthForHair);
       bangsResult = detectBangs(imageData);
     }
     console.log('[FaceAnalysis] Hair length:', hairLengthResult.length, 'Beard:', beardResult.hasBeard);
