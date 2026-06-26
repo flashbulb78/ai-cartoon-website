@@ -259,8 +259,10 @@ export function detectBeardLocal(
     return { hasBeard: false, beardLength: 'none', beardShape: 'unknown', beardColor: 'unknown' };
   }
   // 增加上限检查：如果textureRatio过高(>4.0)但darkPixelRatio低(<8%)，不触发（可能是头发texture）
+  // [Rollback Point 38] 修复：当darkPixelRatio > 0.80时，必须同时有纹理(chinTextureRatio > 0.05)
+  // 否则可能是阴影导致的误检（如下巴阴影），而不是真正的胡须
   const hasBeardByDarkness = brightnessRatio < 0.75 && darkPixelRatio > darkPixelThreshold && 
-                             (textureRatio > 1.80 && textureRatio < 4.50 || darkPixelRatio > 0.80);
+                             (textureRatio > 1.80 && textureRatio < 4.50 || (darkPixelRatio > 0.80 && chinTextureRatio > 0.05));
   // 纹理检测：当textureRatio和chinTextureRatio都很高时，即使darkPixelRatio很低也认为有胡须
   // 优化：降低textureRatio要求以适应络腮胡情况
   // 添加亮度要求：只有下巴比额头暗时（brightnessRatio < 0.80）才根据textureRatio判断有胡子
