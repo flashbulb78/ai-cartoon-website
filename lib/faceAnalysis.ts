@@ -247,6 +247,11 @@ function detectEthnicity(
   
   // 印度/中东 - 归类为中等肤色
   if (skinTone === 'medium' || skinTone === 'medium_light') {
+    // [Rollback Point 39] 修复：如果脸型符合非洲特征，也判断为黑人
+    // 深色皮肤的人即使被检测为 medium_light，如果有宽脸或高鼻宽特征，仍可能是黑人
+    if (faceRatio < 1.2 || noseWidth > faceWidth * 0.38) {
+      return { ethnicity: 'black', confidence: 0.55 };
+    }
     return { ethnicity: 'white', confidence: 0.55 };
   }
   
