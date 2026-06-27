@@ -318,3 +318,154 @@ CREATE POLICY "Anyone can read code changes" ON public.code_changes
 -- RLS策略：服务端可以插入和删除记录
 CREATE POLICY "Service role can manage code changes" ON public.code_changes
     FOR ALL USING (true);
+
+-- =====================================================
+-- 16. 创建用户登录日志表（user_login_logs）
+-- 用于记录每次用户登录/访问行为
+-- =====================================================
+CREATE TABLE IF NOT EXISTS public.user_login_logs (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,  -- 允许空（游客访问无账号）
+    login_ip TEXT,                                              -- 客户端真实公网IP
+    login_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,               -- 登录/访问时间
+    user_agent TEXT,                                           -- 客户端浏览器、设备系统标识
+    device_type TEXT DEFAULT 'Unknown',                        -- 设备分类：PC/Mobile/Tablet/Unknown
+    location TEXT,                                             -- 根据IP解析的粗略地区（省市）
+    login_type TEXT DEFAULT 'email' NOT NULL,                  -- 登录方式：email/google/github/guest
+    session_id TEXT                                            -- 用户会话标识
+);
+
+-- 创建索引
+CREATE INDEX IF NOT EXISTS idx_user_login_logs_user_id ON public.user_login_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_login_logs_login_at ON public.user_login_logs(login_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_login_logs_ip ON public.user_login_logs(login_ip);
+CREATE INDEX IF NOT EXISTS idx_user_login_logs_session ON public.user_login_logs(session_id);
+
+-- 启用RLS
+ALTER TABLE public.user_login_logs ENABLE ROW LEVEL SECURITY;
+
+-- RLS策略：管理员可查看所有日志，普通用户仅可查看自己的登录记录
+CREATE POLICY "Admin can view all login logs" ON public.user_login_logs
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM public.admins 
+            WHERE admins.user_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "Users can view own login logs" ON public.user_login_logs
+    FOR SELECT USING (auth.uid() = user_id);
+
+-- 服务端可以插入记录
+CREATE POLICY "Service role can insert login logs" ON public.user_login_logs
+    FOR INSERT WITH CHECK (true);
+
+-- =====================================================
+-- 17. 创建用户访问统计表（user_access_stats）
+-- 用于聚合统计用户登录行为，减少查询压力
+-- =====================================================
+CREATE TABLE IF NOT EXISTS public.user_access_stats (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE NOT NULL,
+    total_login_count BIGINT DEFAULT 0 NOT NULL,               -- 累计登录总次数
+    daily_login_count INT DEFAULT 0 NOT NULL,                  -- 当日登录次数
+    last_login_at TIMESTAMPTZ,                                 -- 最近一次登录时间
+    first_login_at TIMESTAMPTZ,                                -- 首次登录时间
+    last_ip TEXT,                                              -- 最后登录IP
+    total_page_views BIGINT DEFAULT 0 NOT NULL,                -- 用户累计页面访问次数
+    update_at TIMESTAMPTZ DEFAULT NOW() NOT NULL               -- 统计更新时间
+);
+
+-- 创建索引
+CREATE INDEX IF NOT EXISTS idx_user_access_stats_user_id ON public.user_access_stats(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_access_stats_last_login ON public.user_access_stats(last_login_at DESC);
+
+-- 启用RLS
+ALTER TABLE public.user_access_stats ENABLE ROW LEVEL SECURITY;
+
+-- RLS策略：管理员可查看所有统计，普通用户仅可查看自己的
+CREATE POLICY "Admin can view all access stats" ON public.user_access_stats
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM public.admins 
+            WHERE admins.user_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "Users can view own access stats" ON public.user_access_stats
+    FOR SELECT USING (auth.uid() = user_id);
+
+-- 服务端可以更新统计
+CREATE POLICY "Service role can update access stats" ON public.user_access_stats
+    FOR UPDATE USING (true);
+
+CREATE POLICY "Service role can insert access stats" ON public.user_access_stats
+    FOR INSERT WITH CHECK (true);
+
+-- =====================================================
+-- 18. 创建页面访问日志表（user_page_logs）
+-- 用于记录用户页面访问行为
+-- =====================================================
+CREATE TABLE IF NOT EXISTS public.user_page_logs (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,  -- 允许空（游客访问无账号）
+    page_path TEXT NOT NULL,                                    -- 访问的页面路径
+    access_ip TEXT,                                             -- 访问IP
+    access_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,               -- 访问时间
+    user_agent TEXT,                                            -- 客户端UA
+    device_type TEXT DEFAULT 'Unknown',                         -- 设备类型
+    location TEXT                                               -- 地区
+);
+
+-- 创建索引
+CREATE INDEX IF NOT EXISTS idx_user_page_logs_user_id ON public.user_page_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_page_logs_access_at ON public.user_page_logs(access_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_page_logs_page ON public.user_page_logs(page_path);
+
+-- 启用RLS
+ALTER TABLE public.user_page_logs ENABLE ROW LEVEL SECURITY;
+
+-- RLS策略：管理员可查看所有页面访问日志，普通用户仅可查看自己的
+CREATE POLICY "Admin can view all page logs" ON public.user_page_logs
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM public.admins 
+            WHERE admins.user_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "Users can view own page logs" ON public.user_page_logs
+    FOR SELECT USING (auth.uid() = user_id);
+
+-- 服务端可以插入页面访问记录
+CREATE POLICY "Service role can insert page logs" ON public.user_page_logs
+    FOR INSERT WITH CHECK (true);
+
+-- =====================================================
+-- 19. 创建增加页面访问次数的RPC函数
+-- =====================================================
+CREATE OR REPLACE FUNCTION public.increment_page_views(user_id_param UUID)
+RETURNS void AS $$
+BEGIN
+    UPDATE user_access_stats
+    SET total_page_views = COALESCE(total_page_views, 0) + 1,
+        update_at = NOW()
+    WHERE user_id = user_id_param;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- =====================================================
+-- 20. 创建更新用户最后登录IP的触发器
+-- 当 user_access_stats 的 last_ip 变化时自动更新 update_at
+-- =====================================================
+CREATE OR REPLACE FUNCTION public.update_access_stats_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.update_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_user_access_stats_timestamp
+    BEFORE UPDATE ON public.user_access_stats
+    FOR EACH ROW EXECUTE FUNCTION public.update_access_stats_timestamp();
