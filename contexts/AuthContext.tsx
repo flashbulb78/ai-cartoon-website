@@ -99,6 +99,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [profile]);
 
   /**
+   * 记录登录日志（异步，不阻塞）
+   */
+  const recordLoginLog = useCallback(async (loginType: string = 'email') => {
+    try {
+      await fetch('/api/auth/callback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ loginType }),
+      });
+    } catch (error) {
+      console.error('Failed to record login log:', error);
+    }
+  }, []);
+
+  /**
    * 邮箱密码登录
    */
   const signIn = useCallback(async (email: string, password: string) => {
@@ -112,12 +127,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return { error: error.message };
       }
 
+      // 登录成功后异步记录日志
+      recordLoginLog('email');
+
       return { error: null };
     } catch (error) {
       console.error('Sign in error:', error);
       return { error: 'An unexpected error occurred' };
     }
-  }, [supabase]);
+  }, [supabase, recordLoginLog]);
 
   /**
    * 邮箱注册
