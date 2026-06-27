@@ -6,12 +6,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/server';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * 检查用户是否为管理员
  */
-async function isAdmin(supabase: ReturnType<typeof createClient>, userId: string): Promise<boolean> {
+async function isAdmin(supabase: SupabaseClient, userId: string): Promise<boolean> {
   const { data, error } = await supabase
     .from('admins')
     .select('user_id')
@@ -23,7 +24,7 @@ async function isAdmin(supabase: ReturnType<typeof createClient>, userId: string
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createClient();
+    const supabase = await createClient();
     
     // 1. 验证用户认证
     const { data: { user }, error: authError } = await supabase.auth.getUser();
