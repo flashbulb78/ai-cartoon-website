@@ -469,3 +469,34 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER update_user_access_stats_timestamp
     BEFORE UPDATE ON public.user_access_stats
     FOR EACH ROW EXECUTE FUNCTION public.update_access_stats_timestamp();
+
+-- =====================================================
+-- 21. 创建 DodoPayment Webhook 日志表（用于幂等去重）
+-- =====================================================
+CREATE TABLE IF NOT EXISTS public.webhook_logs (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    webhook_id TEXT UNIQUE NOT NULL,                    -- Dodo webhook 唯一 ID（用于幂等）
+    event_type TEXT NOT NULL,                           -- 事件类型
+    payload JSONB,                                      -- 原始 payload
+    status TEXT DEFAULT 'received' NOT NULL,            -- 状态：received/processed/failed
+    error TEXT,                                         -- 错误信息（如果失败）
+    processed_at TIMESTAMP WITH TIME ZONE,              -- 处理时间
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 创建索引
+CREATE INDEX IF NOT EXISTS idx_webhook_logs_webhook_id ON public.webhook_logs(webhook_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_logs_status ON public.webhook_logs(status);
+CREATE INDEX IF NOT EXISTS idx_webhook_logs_created_at ON public.webhook_logs(created_at DESC);
+
+-- 启用 RLS
+ALTER TABLE public.webhook_logs ENABLE ROW LEVEL SECURITY;
+
+-- RLS 策略：服务端可以所有操作
+CREATE POLICY "Service role can manage webhook_logs" ON public.webhook_logs
+    FOR ALL USING (true);
+
+-- 为 webhook_logs 创建 updated_at 触发器
+CREATE TRIGGER update_webhook_logs_updated_at
+    BEFORE UPDATE ON public.webhook_logs
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();

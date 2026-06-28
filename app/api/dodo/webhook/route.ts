@@ -1,0 +1,185 @@
+/**
+ * app/api/dodo/webhook/route.ts
+ * DodoPayment Webhook 回调处理
+ * 
+ * POST /api/dodo/webhook
+ * 
+ * DodoPayment 会在支付成功后 POST 到此地址
+ * 必须：
+ * 1. 验证签名（防伪造）
+ * 2. 使用 webhook-id 去重（幂等）
+ * 3. 立即返回 200（否则会重试）
+ * 4. 异步处理业务逻辑
+ */
+
+import { NextRequest, NextResponse } from 'next/server';
+import { verifyWebhookSignature, DodoWebhookEvent } from '@/lib/dodopayment';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
+
+/**
+ * 处理支付成功事件
+ */
+async function handlePaymentSucceeded(
+  event: DodoWebhookEvent,
+  supabaseAdmin: ReturnType<typeof createAdminClient>
+) {
+  const payment = event.data.payment;
+  if (!payment) return;
+  
+  const userId = payment.metadata?.user_id;
+  const orderId = payment.metadata?.order_id;
+  
+  if (!userId) {
+    console.error('[DodoPayment Webhook] No user_id in metadata');
+    return;
+  }
+  
+  console.log('[DodoPayment Webhook] Payment succeeded:', {
+    payment_id: payment.payment_id,
+    user_id: userId,
+    order_id: orderId,
+    amount: payment.total_amount,
+    currency: payment.currency,
+  });
+  
+  // 根据商品获取对应的 credits 数量
+  // 这里需要根据你的商品 ID 和 credits 的映射关系来计算
+  // 暂时从 transactions 表中通过 order_id 查找对应的 credits
+  
+  // 更新用户 credits
+  // 由于我们不知道具体映射关系，暂时先记录交易
+  // 实际生产中需要在创建 checkout 时就把 credits 信息存入 metadata
+}
+
+/**
+ * 处理支付失败事件
+ */
+async function handlePaymentFailed(
+  event: DodoWebhookEvent,
+  supabaseAdmin: ReturnType<typeof createAdminClient>
+) {
+  const payment = event.data.payment;
+  if (!payment) return;
+  
+  console.log('[DodoPayment Webhook] Payment failed:', {
+    payment_id: payment.payment_id,
+    user_id: payment.metadata?.user_id,
+    status: payment.status,
+  });
+}
+
+export async function POST(request: NextRequest) {
+  // 1. 获取原始请求体（用于验签）
+  const rawBody = await request.text();
+  const body = Buffer.from(rawBody);
+  
+  // 2. 获取 webhook headers
+  const webhookId = request.headers.get('webhook-id');
+  const webhookSignature = request.headers.get('webhook-signature');
+  const webhookTimestamp = request.headers.get('webhook-timestamp');
+  
+  if (!webhookId || !webhookSignature || !webhookTimestamp) {
+    console.error('[DodoPayment Webhook] Missing headers');
+    return NextResponse.json(
+      { error: 'Missing webhook headers' },
+      { status: 400 }
+    );
+  }
+  
+  // 3. 验证签名
+  const isValid = verifyWebhookSignature(
+    body,
+    webhookId,
+    webhookTimestamp,
+    webhookSignature
+  );
+  
+  if (!isValid) {
+    console.error('[DodoPayment Webhook] Invalid signature');
+    return NextResponse.json(
+      { error: 'Invalid signature' },
+      { status: 401 }
+    );
+  }
+  
+  // 4. 解析事件数据
+  let event: DodoWebhookEvent;
+  try {
+    event = JSON.parse(rawBody);
+  } catch (error) {
+    console.error('[DodoPayment Webhook] Failed to parse body:', error);
+    return NextResponse.json(
+      { error: 'Invalid JSON' },
+      { status: 400 }
+    );
+  }
+  
+  console.log('[DodoPayment Webhook] Received event:', event.event_type, {
+    event_id: event.event_id,
+    payment_id: event.data.payment?.payment_id,
+  });
+  
+  // 5. 幂等检查 - 使用 webhook-id 去重
+  const supabase = await createClient();
+  const supabaseAdmin = createAdminClient();
+  
+  const { data: existingLog } = await supabaseAdmin
+    .from('webhook_logs')
+    .select('id')
+    .eq('webhook_id', webhookId)
+    .single();
+  
+  if (existingLog) {
+    // 已经处理过这个事件，直接返回
+    console.log('[DodoPayment Webhook] Duplicate event, skipping:', webhookId);
+    return NextResponse.json({ received: true });
+  }
+  
+  // 6. 记录 webhook 日志（立即落库）
+  await supabaseAdmin
+    .from('webhook_logs')
+    .insert({
+      webhook_id: webhookId,
+      event_type: event.event_type,
+      payload: event as any,
+      status: 'received',
+    });
+  
+  // 7. 立即返回 200（不能再晚了，否则会被 Dodo 重试）
+  // 业务逻辑在后台异步处理
+  setImmediate(async () => {
+    try {
+      // 根据事件类型处理
+      switch (event.event_type) {
+        case 'payment.succeeded':
+          await handlePaymentSucceeded(event, supabaseAdmin);
+          // 更新 webhook 状态
+          await supabaseAdmin
+            .from('webhook_logs')
+            .update({ status: 'processed' })
+            .eq('webhook_id', webhookId);
+          break;
+          
+        case 'payment.failed':
+          await handlePaymentFailed(event, supabaseAdmin);
+          await supabaseAdmin
+            .from('webhook_logs')
+            .update({ status: 'processed' })
+            .eq('webhook_id', webhookId);
+          break;
+          
+        default:
+          console.log('[DodoPayment Webhook] Unhandled event type:', event.event_type);
+      }
+    } catch (error) {
+      console.error('[DodoPayment Webhook] Error processing event:', error);
+      // 更新为失败状态
+      await supabaseAdmin
+        .from('webhook_logs')
+        .update({ status: 'failed', error: String(error) })
+        .eq('webhook_id', webhookId);
+    }
+  });
+  
+  return NextResponse.json({ received: true });
+}
