@@ -130,9 +130,11 @@ export default function ProfilePage() {
               </Link>
               <div className="w-px h-6 bg-gray-200 hidden sm:block" />
               <Link href="/" className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
-                  <span className="text-white text-xl">🎨</span>
-                </div>
+                <img
+                  src="/avatar_logo.jpg"
+                  alt="AI Cartoon Avatar Logo"
+                  className="w-10 h-10 rounded-xl object-cover"
+                />
                 <span className="text-xl font-bold text-gray-900 hidden sm:block">AI Cartoon Avatar</span>
               </Link>
             </div>

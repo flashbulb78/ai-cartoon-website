@@ -55,10 +55,12 @@ export function Header({ isLoggedIn, userName, userAvatar, credits, onLogin, onP
         <div className="flex items-center justify-between h-16">
           {/* Logo区域 */}
           <div className="flex items-center gap-3">
-            {/* Logo图标 - 渐变蓝色背景 */}
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-500/20">
-              <span className="text-white text-xl">🎨</span>
-            </div>
+            {/* Logo图标 */}
+            <img
+              src="/avatar_logo.jpg"
+              alt="AI Cartoon Avatar Logo"
+              className="w-10 h-10 rounded-xl object-cover shadow-md"
+            />
             {/* 网站名称 */}
             <div>
               <h1 className="text-xl font-bold text-gray-900 tracking-tight">

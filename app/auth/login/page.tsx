@@ -100,9 +100,11 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-3">
-            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <span className="text-white text-2xl">🎨</span>
-            </div>
+            <img
+              src="/avatar_logo.jpg"
+              alt="AI Cartoon Avatar Logo"
+              className="w-12 h-12 rounded-xl object-cover shadow-lg"
+            />
             <span className="text-2xl font-bold text-gray-900">AI Cartoon Avatar</span>
           </Link>
         </div>
