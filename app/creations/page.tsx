@@ -167,7 +167,7 @@ export default function CreationsPage() {
               <div className="w-px h-6 bg-gray-200 hidden sm:block" />
               <Link href="/" className="flex items-center gap-3">
                 <img
-                  src="/avatar_logo.jpg"
+                  src="/avatar_logo_120.jpg"
                   alt="AI Cartoon Avatar Logo"
                   className="w-10 h-10 rounded-xl object-cover"
                 />

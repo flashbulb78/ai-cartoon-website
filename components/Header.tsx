@@ -57,7 +57,7 @@ export function Header({ isLoggedIn, userName, userAvatar, credits, onLogin, onP
           <div className="flex items-center gap-3">
             {/* Logo图标 */}
             <img
-              src="/avatar_logo.jpg"
+              src="/avatar_logo_120.jpg"
               alt="AI Cartoon Avatar Logo"
               className="w-10 h-10 rounded-xl object-cover shadow-md"
             />
