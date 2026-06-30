@@ -130,10 +130,10 @@ function parseGeoLocation(countryCode: string | null): string {
   return '未知';
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // 异步执行日志记录，不阻塞请求
   processPageAccess(request).catch(err => {
-    console.error('[Middleware] Page access log error:', err);
+    console.error('[Proxy] Page access log error:', err);
   });
 
   return NextResponse.next();
