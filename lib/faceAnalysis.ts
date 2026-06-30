@@ -264,8 +264,8 @@ function detectEthnicity(
     return { ethnicity: 'white', confidence: 0.5 };
   }
   
-  // 拉丁裔 - 归类为白人（medium_dark已在上面处理）
-  if (skinTone !== 'dark' && skinTone !== 'medium_dark' && faceRatio >= 1.2) {
+  // 拉丁裔 - 归类为白人
+  if (skinTone !== 'dark' && faceRatio >= 1.2) {
     return { ethnicity: 'white', confidence: 0.5 };
   }
   
