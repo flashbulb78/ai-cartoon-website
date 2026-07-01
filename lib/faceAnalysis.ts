@@ -245,12 +245,13 @@ function detectEthnicity(
     return { ethnicity: 'white', confidence: 0.65 };
   }
   
-  // 印度/中东 - 归类为中等肤色
+  // 印度/中东/拉丁裔 - 归类为中等肤色白人
+  // medium_light 肤色不应仅因宽脸就判定为黑人，medium_light 更接近白人
   if (skinTone === 'medium' || skinTone === 'medium_light') {
-    // [Rollback Point 39] 修复：如果脸型符合非洲特征，也判断为黑人
-    // 深色皮肤的人即使被检测为 medium_light，如果有宽脸或高鼻宽特征，仍可能是黑人
-    if (faceRatio < 1.2 || noseWidth > faceWidth * 0.38) {
-      return { ethnicity: 'black', confidence: 0.55 };
+    // 只有在非常明显的非洲特征（深肤色+宽脸+宽鼻）才判定为黑人
+    // 这种组合在 medium_light 肤色中极少见
+    if (skinTone === 'medium_light' && faceRatio < 1.15 && noseWidth > faceWidth * 0.4) {
+      return { ethnicity: 'black', confidence: 0.45 };
     }
     return { ethnicity: 'white', confidence: 0.55 };
   }
@@ -1179,7 +1180,8 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
     const hasTempleHair = templeRatio > 0.02 && templeRatio < 0.15; // 鬓角有少量头发
     const isLowHairRatio = hairRatio < 0.05; // 头顶扫描比例很低（当前检测为bald）
     
-    if (hasTempleHair && isLowHairRatio && !hasBeard) {
+    // [FIXED] 2024-07-01: 添加 topRatio > 0 检查，避免将头顶无头发的光头误判为束发
+    if (hasTempleHair && isLowHairRatio && !hasBeard && topRatio > 0) {
       console.log(`[HairLength] [ROLLBACK POINT 26] Bun hairstyle detected: templeRatio=${templeRatio.toFixed(3)}, hairRatio=${hairRatio.toFixed(3)}`);
       // 束发是有一定长度的头发，应该是medium
       return { length: 'medium', confidence: 0.5, shoulderRatio };
