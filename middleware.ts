@@ -191,24 +191,22 @@ async function processPageAccess(request: NextRequest): Promise<void> {
       return;
     }
     
-    // 获取用户会话（带独立错误处理）
+    // 获取用户ID（直接从Cookie读取token，Edge兼容方式）
+    // 不调用任何auth方法，避免__dirname错误
     let userId: string | null = null;
     try {
-      // Edge兼容：直接从cookie读取session
       const accessToken = tryGetCookie(request, 'sb-access-token');
-      const refreshToken = tryGetCookie(request, 'sb-refresh-token');
-      
-      if (accessToken || refreshToken) {
-        const { data: { user }, error } = await supabase.auth.getUser(
-          accessToken || undefined
-        );
-        
-        if (!error && user) {
-          userId = user.id;
+      // 如果有token，解析JWT获取userId（不调用auth API）
+      if (accessToken) {
+        try {
+          const payload = JSON.parse(atob(accessToken.split('.')[1]));
+          userId = payload.sub || null;
+        } catch {
+          // JWT解析失败，忽略
         }
       }
     } catch (err) {
-      console.error('[Middleware] Failed to get user session:', err);
+      console.error('[Middleware] Failed to get user ID:', err);
     }
     
     // 提取客户端信息
