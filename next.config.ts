@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Ensure trailing slash for proper Vercel routing
+  trailingSlash: true,
+  
   // Image optimization configuration
   images: {
     // Allow external images from these domains
