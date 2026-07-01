@@ -1,11 +1,11 @@
 /**
- * middleware.ts
- * 极简版本 - 仅用于诊断 Vercel 部署问题
+ * proxy.ts
+ * Next.js 16 全局代理/中间件文件
  */
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
