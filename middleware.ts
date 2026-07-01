@@ -206,8 +206,8 @@ async function processPageAccess(request: NextRequest): Promise<void> {
     // 获取用户会话（带独立错误处理）
     let userId: string | null = null;
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      userId = user?.id || null;
+      const { data: { session } } = await supabase.auth.getSession();
+      userId = session?.user?.id || null;
     } catch (err) {
       console.error('[Middleware] Failed to get user session:', err);
       // 继续执行，不阻断
