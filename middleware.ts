@@ -9,9 +9,8 @@
  * 4. 写入失败不抛出业务报错
  * 
  * 安全特性：
+ * - 使用 @supabase/supabase-js（Edge兼容）而非 @supabase/ssr
  * - 多层 try/catch 容错
- * - Supabase 初始化校验
- * - 独立 Promise 错误捕获
  * - 任何异常都不阻断页面访问
  * 
  * 注意：此文件使用 Edge Runtime 完全兼容的 API，不依赖 Node.js 特定模块
@@ -19,7 +18,33 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createBrowserClient } from '@supabase/ssr';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+
+/**
+ * 创建Supabase客户端（Edge兼容版本）
+ * 使用 @supabase/supabase-js 而非 @supabase/ssr
+ */
+function createSupabaseClient(): SupabaseClient | null {
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    
+    if (!url || !key) {
+      console.warn('[Middleware] Supabase environment variables missing');
+      return null;
+    }
+    
+    return createClient(url, key, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
+  } catch (err) {
+    console.error('[Middleware] Failed to create Supabase client:', err);
+    return null;
+  }
+}
 
 /**
  * 从请求头提取真实IP地址（Edge Runtime兼容）
@@ -27,19 +52,15 @@ import { createBrowserClient } from '@supabase/ssr';
  */
 function getClientIp(request: NextRequest): string | null {
   try {
-    // 优先使用 CF-Connecting-IP（Cloudflare代理）
     const cfIp = request.headers.get('cf-connecting-ip');
     if (cfIp) return extractFirstIp(cfIp);
 
-    // 使用 x-vercel-forwarded-for（Vercel代理）
     const vercelForwardedFor = request.headers.get('x-vercel-forwarded-for');
     if (vercelForwardedFor) return extractFirstIp(vercelForwardedFor);
 
-    // 使用 x-forwarded-for（通用代理）
     const forwardedFor = request.headers.get('x-forwarded-for');
     if (forwardedFor) return extractFirstIp(forwardedFor);
 
-    // 使用 x-real-ip（nginx代理）
     const realIp = request.headers.get('x-real-ip');
     if (realIp) return extractFirstIp(realIp);
   } catch {
@@ -58,7 +79,6 @@ function extractFirstIp(ipString: string | null): string | null {
     const ips = ipString.split(',').map(ip => ip.trim());
     const firstIp = ips[0];
     
-    // 过滤内网IP
     if (isPrivateIp(firstIp)) {
       if (ips.length > 1 && !isPrivateIp(ips[1])) {
         return ips[1];
@@ -84,19 +104,10 @@ function isPrivateIp(ip: string | null): boolean {
     
     const [a, b] = parts;
     
-    // 127.x.x.x (loopback)
     if (a === 127) return true;
-    
-    // 10.x.x.x
     if (a === 10) return true;
-    
-    // 172.16.x.x - 172.31.x.x
     if (a === 172 && b >= 16 && b <= 31) return true;
-    
-    // 192.168.x.x
     if (a === 192 && b === 168) return true;
-    
-    // 169.254.x.x (link-local)
     if (a === 169 && b === 254) return true;
   } catch {
     return true;
@@ -156,31 +167,9 @@ function parseGeoLocation(countryCode: string | null): string {
 }
 
 /**
- * 创建Supabase客户端（用于中间件）- 带错误处理
- */
-function createSupabaseClient() {
-  try {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    
-    if (!url || !key) {
-      console.warn('[Middleware] Supabase environment variables missing');
-      return null;
-    }
-    
-    return createBrowserClient(url, key);
-  } catch (err) {
-    console.error('[Middleware] Failed to create Supabase client:', err);
-    return null;
-  }
-}
-
-/**
  * 异步执行日志记录，不阻塞请求 - 带完整错误处理
  */
 function processPageAccessSafe(request: NextRequest): void {
-  // 直接触发异步处理，不等待结果
-  // Edge Runtime 不支持 setImmediate，使用 Promise.resolve().then() 替代
   Promise.resolve().then(() => {
     processPageAccess(request).catch(err => {
       console.error('[Middleware] Page access log error:', err);
@@ -198,7 +187,6 @@ async function processPageAccess(request: NextRequest): Promise<void> {
   try {
     const supabase = createSupabaseClient();
     
-    // Supabase 客户端初始化失败，跳过日志写入
     if (!supabase) {
       return;
     }
@@ -206,14 +194,24 @@ async function processPageAccess(request: NextRequest): Promise<void> {
     // 获取用户会话（带独立错误处理）
     let userId: string | null = null;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      userId = session?.user?.id || null;
+      // Edge兼容：直接从cookie读取session
+      const accessToken = tryGetCookie(request, 'sb-access-token');
+      const refreshToken = tryGetCookie(request, 'sb-refresh-token');
+      
+      if (accessToken || refreshToken) {
+        const { data: { user }, error } = await supabase.auth.getUser(
+          accessToken || undefined
+        );
+        
+        if (!error && user) {
+          userId = user.id;
+        }
+      }
     } catch (err) {
       console.error('[Middleware] Failed to get user session:', err);
-      // 继续执行，不阻断
     }
     
-    // 提取客户端信息（所有函数都有 try/catch）
+    // 提取客户端信息
     const clientIp = getClientIp(request);
     const userAgent = tryGetHeader(request, 'user-agent');
     const deviceType = getDeviceType(userAgent);
@@ -245,37 +243,28 @@ async function processPageAccess(request: NextRequest): Promise<void> {
     }
     
     // 异步写入页面访问日志（独立 try/catch）
-    const logPromise = (async () => {
-      try {
-        const result = await supabase
-          .from('user_page_logs')
-          .insert({
-            user_id: userId,
-            page_path: pagePath,
-            access_ip: clientIp,
-            access_at: new Date().toISOString(),
-            user_agent: userAgent,
-            device_type: deviceType,
-            location: location,
-            session_id: sessionId,
-          });
-        
-        if (result.error) {
-          console.error('[Middleware] Log insert error:', result.error);
-        }
-      } catch (err) {
-        console.error('[Middleware] Log insert exception:', err);
-        // 静默失败，不抛出
+    try {
+      const result = await supabase
+        .from('user_page_logs')
+        .insert({
+          user_id: userId,
+          page_path: pagePath,
+          access_ip: clientIp,
+          access_at: new Date().toISOString(),
+          user_agent: userAgent,
+          device_type: deviceType,
+          location: location,
+          session_id: sessionId,
+        });
+      
+      if (result.error) {
+        console.error('[Middleware] Log insert error:', result.error);
       }
-    })();
-    
-    // 等待日志完成，但不阻塞
-    await Promise.resolve(logPromise).catch(err => {
-      console.error('[Middleware] Log promise error:', err);
-    });
+    } catch (err) {
+      console.error('[Middleware] Log insert exception:', err);
+    }
 
   } catch (error) {
-    // 顶级容错：任何异常都不阻断页面访问
     console.error('[Middleware] processPageAccess error:', error);
   }
 }
@@ -292,18 +281,24 @@ function tryGetHeader(request: NextRequest, name: string): string | null {
 }
 
 /**
+ * 安全获取Cookie
+ */
+function tryGetCookie(request: NextRequest, name: string): string | null {
+  try {
+    return request.cookies.get(name)?.value || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 全局中间件入口 - 多层容错
  */
 export async function middleware(request: NextRequest) {
-  // 顶级 try/catch：任何异常都返回 NextResponse.next()
   try {
-    // 触发异步日志记录（不会阻塞）
     processPageAccessSafe(request);
-    
-    // 立即返回，不等待日志
     return NextResponse.next();
   } catch (error) {
-    // 顶级容错：即使抛出异常也放行页面
     console.error('[Middleware] Uncaught exception:', error);
     return NextResponse.next();
   }
@@ -312,7 +307,6 @@ export async function middleware(request: NextRequest) {
 // 配置需要匹配的路径
 export const config = {
   matcher: [
-    // 匹配所有页面和API路由，除了静态资源和内部API
     '/((?!_next/static|_next/image|favicon.ico|api/auth).*)',
   ],
 };
