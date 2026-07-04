@@ -19,6 +19,7 @@ const globalClients: {
 /**
  * 创建Supabase浏览器客户端（单例）
  * 用于客户端组件
+ * 配置使用 cookies 存储 session（兼容服务端 API 路由）
  */
 export function createBrowserClient(): SupabaseClient {
   if (globalClients.browser) {
@@ -32,6 +33,33 @@ export function createBrowserClient(): SupabaseClient {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
+        storage: {
+          getItem: (key: string) => {
+            if (typeof document === 'undefined') return null;
+            const cookies = document.cookie.split(';');
+            for (const cookie of cookies) {
+              const [name, value] = cookie.trim().split('=');
+              if (name === key) {
+                try {
+                  return decodeURIComponent(value);
+                } catch {
+                  return value;
+                }
+              }
+            }
+            return null;
+          },
+          setItem: (key: string, value: string) => {
+            if (typeof document === 'undefined') return;
+            const expires = new Date();
+            expires.setDate(expires.getDate() + 7); // 7 days
+            document.cookie = `${key}=${encodeURIComponent(value)};path=/;expires=${expires.toUTCString()};SameSite=Lax`;
+          },
+          removeItem: (key: string) => {
+            if (typeof document === 'undefined') return;
+            document.cookie = `${key}=;path=/;expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+          },
+        },
       },
     }
   );
