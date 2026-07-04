@@ -56,10 +56,44 @@ export async function POST(request: Request) {
       }
     }
     console.log(`[Generate API ${requestId}] CSRF check passed`);
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
     
-    if (authError) {
-      console.error(`[Generate API ${requestId}] Auth error:`, authError);
+    // ========== 2.2 获取用户会话 ==========
+    // 手动从 cookie 中解析 access_token
+    const cookieHeader = request.headers.get('cookie') || '';
+    const cookies = Object.fromEntries(
+      cookieHeader.split(';').map(c => {
+        const [key, ...val] = c.trim().split('=');
+        return [key, val.join('=')];
+      })
+    );
+    
+    // 找到 Supabase auth cookie
+    const supabaseCookieName = Object.keys(cookies).find(k => k.includes('supabase') || k.includes('sb-'));
+    let accessToken: string | null = null;
+    
+    if (supabaseCookieName) {
+      console.log(`[Generate API ${requestId}] Found auth cookie: ${supabaseCookieName}`);
+      try {
+        const cookieValue = decodeURIComponent(cookies[supabaseCookieName]);
+        const session = JSON.parse(cookieValue);
+        accessToken = session?.access_token || null;
+        console.log(`[Generate API ${requestId}] Access token extracted:`, accessToken ? 'yes' : 'no');
+      } catch (e) {
+        console.error(`[Generate API ${requestId}] Failed to parse cookie:`, e);
+      }
+    } else {
+      console.log(`[Generate API ${requestId}] No auth cookie found. Cookies:`, cookieHeader.substring(0, 200));
+    }
+    
+    // 使用 access token 获取用户
+    let user = null;
+    if (accessToken) {
+      const { data, error } = await supabase.auth.getUser(accessToken);
+      if (error) {
+        console.error(`[Generate API ${requestId}] getUser error:`, error);
+      }
+      user = data?.user || null;
+      console.log(`[Generate API ${requestId}] User from token:`, user?.id || 'null');
     }
     
     if (!user) {
