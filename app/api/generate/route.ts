@@ -58,46 +58,11 @@ export async function POST(request: Request) {
     console.log(`[Generate API ${requestId}] CSRF check passed`);
     
     // ========== 2.2 获取用户会话 ==========
-    // 手动从 cookie 中解析 access_token
-    const cookieHeader = request.headers.get('cookie') || '';
-    console.log(`[Generate API ${requestId}] Raw cookie header:`, cookieHeader.substring(0, 300));
+    // 使用 @supabase/ssr 创建的客户端会自动从 cookie 中获取认证信息
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
     
-    const cookies: Record<string, string> = {};
-    cookieHeader.split(';').forEach(c => {
-      const [key, ...val] = c.trim().split('=');
-      if (key) {
-        cookies[key] = val.join('=');
-      }
-    });
-    console.log(`[Generate API ${requestId}] Parsed cookies keys:`, Object.keys(cookies));
-    
-    // 找到 Supabase auth cookie
-    const supabaseCookieName = Object.keys(cookies).find(k => k.includes('supabase') || k.includes('sb-'));
-    let accessToken: string | null = null;
-    
-    if (supabaseCookieName) {
-      console.log(`[Generate API ${requestId}] Found auth cookie: ${supabaseCookieName}`);
-      try {
-        const cookieValue = decodeURIComponent(cookies[supabaseCookieName]);
-        const session = JSON.parse(cookieValue);
-        accessToken = session?.access_token || null;
-        console.log(`[Generate API ${requestId}] Access token extracted:`, accessToken ? 'yes' : 'no');
-      } catch (e) {
-        console.error(`[Generate API ${requestId}] Failed to parse cookie:`, e);
-      }
-    } else {
-      console.log(`[Generate API ${requestId}] No auth cookie found. Cookies:`, cookieHeader.substring(0, 200));
-    }
-    
-    // 使用 access token 获取用户
-    let user = null;
-    if (accessToken) {
-      const { data, error } = await supabase.auth.getUser(accessToken);
-      if (error) {
-        console.error(`[Generate API ${requestId}] getUser error:`, error);
-      }
-      user = data?.user || null;
-      console.log(`[Generate API ${requestId}] User from token:`, user?.id || 'null');
+    if (authError) {
+      console.error(`[Generate API ${requestId}] Auth error:`, authError);
     }
     
     if (!user) {
@@ -110,9 +75,8 @@ export async function POST(request: Request) {
     console.log(`[Generate API ${requestId}] User authenticated:`, user.id);
 
     // ========== 3. 获取并检查用户资料 ==========
-    console.log(`[Generate API ${requestId}] Step 2: Fetching user profile`);
-    // 使用 admin 客户端查询 profile（绕过 RLS，因为用户已通过 access token 验证）
-    const { data: profile, error: profileError } = await adminClient
+    // 使用普通客户端（带 RLS），@supabase/ssr 会自动传递认证上下文
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', user.id)

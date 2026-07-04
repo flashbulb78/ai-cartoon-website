@@ -207,13 +207,34 @@ export async function POST(request: NextRequest) {
   // 邮箱登录通过 AuthContext 客户端处理，但可以通过此接口补录日志
   
   try {
-    // 使用 @supabase/ssr 创建的客户端，自动获取认证信息
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    // 手动从 cookie 中解析 access_token（与 /api/generate 相同的方式）
+    const cookieHeader = request.headers.get('cookie') || '';
+    const cookies: Record<string, string> = {};
+    cookieHeader.split(';').forEach(c => {
+      const [key, ...val] = c.trim().split('=');
+      if (key) {
+        cookies[key] = val.join('=');
+      }
+    });
     
-    if (!user) {
+    const supabaseCookieName = Object.keys(cookies).find(k => k.includes('supabase') || k.includes('sb-'));
+    let userId: string | null = null;
+    
+    if (supabaseCookieName) {
+      try {
+        const cookieValue = decodeURIComponent(cookies[supabaseCookieName]);
+        const session = JSON.parse(cookieValue);
+        userId = session?.user?.id || null;
+      } catch (e) {
+        console.error('[AuthCallback] POST failed to parse cookie:', e);
+      }
+    }
+    
+    if (!userId) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
+    
+    const user = { id: userId } as { id: string };
     
     // 从请求体获取登录类型
     const body = await request.json().catch(() => ({}));
