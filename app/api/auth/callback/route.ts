@@ -209,7 +209,7 @@ export async function POST(request: NextRequest) {
   
   // ========== Rate Limiting 检查 ==========
   const checkRateLimit = createRateLimiter(RATE_LIMITS.auth);
-  const rateLimitResponse = checkRateLimit(request);
+  const rateLimitResponse = await checkRateLimit(request);
   if (rateLimitResponse) {
     return rateLimitResponse;
   }

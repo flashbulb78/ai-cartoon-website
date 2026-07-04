@@ -152,11 +152,11 @@ export function createDatabaseRateLimiter(config: RateLimitConfig, action: strin
 export function createRateLimiter(config: RateLimitConfig, action: string = 'api') {
   const dbLimiter = createDatabaseRateLimiter(config, action);
   
-  return async function checkRateLimit(request: Request): Promise<Response | null> {
+  return async function checkRateLimit(request: Request): Promise<Response | undefined> {
     const result = await dbLimiter(request);
     
     if (result.allowed) {
-      return null; // 通过检查
+      return undefined; // 通过检查，不拦截
     }
     
     // 创建限流响应
