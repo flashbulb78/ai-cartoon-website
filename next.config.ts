@@ -15,11 +15,11 @@ const nextConfig: NextConfig = {
     ],
   },
   
-  // Security headers
+  // Security headers - exclude static assets
   async headers() {
     return [
       {
-        source: '/:path*',
+        source: '/((?!_next/static|_next/image|favicon.ico).*)',
         headers: [
           {
             key: 'X-Content-Type-Options',
