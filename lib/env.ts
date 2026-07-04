@@ -10,7 +10,6 @@
 const REQUIRED_ENV_VARS = [
   // MiniMax API
   'MINIMAX_API_KEY',
-  'MINIMAX_GROUP_ID',
   
   // Supabase
   'NEXT_PUBLIC_SUPABASE_URL',

@@ -180,6 +180,7 @@ export default function HomePage() {
       
       const response = await fetch('/api/generate', {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
