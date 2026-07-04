@@ -140,8 +140,16 @@ export function PrivacyConsentModal({
 }: PrivacyConsentModalProps) {
   const [selectedLang, setSelectedLang] = useState<keyof typeof CONSENT_TEXTS>('en');
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
+  const [isConsentChecked, setIsConsentChecked] = useState(false);
 
   const currentText = CONSENT_TEXTS[selectedLang];
+
+  const handleAccept = useCallback(() => {
+    if (!isConsentChecked) {
+      return;
+    }
+    onAccept();
+  }, [isConsentChecked, onAccept]);
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const element = e.target as HTMLDivElement;
@@ -226,7 +234,8 @@ export function PrivacyConsentModal({
                 type="checkbox"
                 id="consent-checkbox"
                 className="mt-1 w-5 h-5 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
-                required
+                checked={isConsentChecked}
+                onChange={(e) => setIsConsentChecked(e.target.checked)}
               />
               <span className="text-sm text-amber-800">
                 I have read and understood the privacy statement above, and I voluntarily agree to upload my face image for avatar generation.
@@ -245,7 +254,8 @@ export function PrivacyConsentModal({
             </Button>
             <Button
               variant="primary"
-              onClick={onAccept}
+              onClick={handleAccept}
+              disabled={!isConsentChecked}
               className="flex-1"
             >
               {currentText.accept}

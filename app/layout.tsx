@@ -3,11 +3,11 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI Cartoon Avatar - Transform Your Photos into Stunning Art",
+  title: "Magic Cartoon Avatar - Transform Your Photos into Stunning Art",
   description: "Upload your photo and choose a style to generate unique cartoon avatars using AI. Free credits available!",
   keywords: ["AI", "cartoon", "avatar", "generator", "anime", "photo to cartoon"],
   openGraph: {
-    title: "AI Cartoon Avatar",
+    title: "Magic Cartoon Avatar",
     description: "Transform your photos into stunning cartoon art with AI",
     type: "website",
   },

@@ -276,7 +276,7 @@ export default function HomePage() {
         {/* 页面标题 */}
         <div className="text-center mb-8">
           <h2 className="text-3xl sm:text-4xl font-bold text-foreground tracking-tight">
-            Create Your AI Cartoon Avatar
+            Create Your Magic Cartoon Avatar
           </h2>
           <p className="mt-3 text-muted-foreground max-w-2xl mx-auto">
             Upload your photo and choose a style to generate a unique cartoon avatar in seconds

@@ -58,13 +58,13 @@ export function Header({ isLoggedIn, userName, userAvatar, credits, onLogin, onP
             {/* Logo图标 */}
             <img
               src="/avatar_logo_120.jpg"
-              alt="AI Cartoon Avatar Logo"
+              alt="Magic Cartoon Avatar Logo"
               className="w-10 h-10 rounded-xl object-cover shadow-md"
             />
             {/* 网站名称 */}
             <div>
               <h1 className="text-xl font-bold text-gray-900 tracking-tight">
-                AI Cartoon Avatar
+                Magic Cartoon Avatar
               </h1>
               <p className="text-xs text-gray-500 hidden sm:block">
                 Transform your photos into stunning art

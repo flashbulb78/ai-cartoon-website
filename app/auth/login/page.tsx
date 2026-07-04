@@ -102,10 +102,10 @@ export default function LoginPage() {
           <Link href="/" className="inline-flex items-center gap-3">
             <img
               src="/avatar_logo_120.jpg"
-              alt="AI Cartoon Avatar Logo"
+              alt="Magic Cartoon Avatar Logo"
               className="w-12 h-12 rounded-xl object-cover shadow-lg"
             />
-            <span className="text-2xl font-bold text-gray-900">AI Cartoon Avatar</span>
+            <span className="text-2xl font-bold text-gray-900">Magic Cartoon Avatar</span>
           </Link>
         </div>
 

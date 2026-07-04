@@ -153,7 +153,7 @@ export async function POST(request: Request) {
             currency: pkg.currency.toLowerCase(),
             product_data: {
               name: `${pkg.name} - ${pkg.credits} Credits`,
-              description: pkg.description || `${pkg.credits} credits for AI Cartoon Avatar generation`,
+              description: pkg.description || `${pkg.credits} credits for Magic Cartoon Avatar generation`,
             },
             unit_amount: Math.round(pkg.price * 100), // Convert to cents
           },
