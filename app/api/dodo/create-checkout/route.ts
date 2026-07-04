@@ -43,8 +43,28 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // 3. 构建 DodoPayment 请求
+    // 3. 获取商品信息以计算 credits
+    const { data: pricingPackage, error: packageError } = await supabase
+      .from('pricing_packages')
+      .select('credits, name')
+      .eq('id', product_id)
+      .eq('is_active', true)
+      .single();
+    
+    if (packageError || !pricingPackage) {
+      console.error('[DodoPayment] Package not found:', product_id, packageError);
+      return NextResponse.json(
+        { success: false, error: 'Product not found' },
+        { status: 400 }
+      );
+    }
+    
+    // 计算总 credits
+    const totalCredits = pricingPackage.credits * quantity;
+    
+    // 4. 构建 DodoPayment 请求
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+    const orderId = `order_${Date.now()}_${user.id.slice(0, 8)}`;
     
     const checkoutRequest: DodoCheckoutRequest = {
       product_cart: [
@@ -58,7 +78,9 @@ export async function POST(request: NextRequest) {
       cancel_url: `${baseUrl}/checkout/cancel`,
       metadata: {
         user_id: user.id,
-        order_id: `order_${Date.now()}_${user.id.slice(0, 8)}`, // 本地订单号
+        order_id: orderId,
+        credits: String(totalCredits),  // 存储 credits 数量
+        package_name: pricingPackage.name,  // 存储套餐名称
       },
       billing_currency: 'USD',
     };

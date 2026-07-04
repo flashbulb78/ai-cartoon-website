@@ -3,6 +3,7 @@ import { generateCartoonAvatar } from '@/lib/minimax';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { CartoonStyle, GenerateRequest, ApiResponse, GenerateResponseData } from '@/lib/types';
 import { ERROR_MESSAGES } from '@/lib/constants';
+import { createRateLimiter, RATE_LIMITS } from '@/lib/rateLimit';
 
 /**
  * POST /api/generate
@@ -15,8 +16,17 @@ import { ERROR_MESSAGES } from '@/lib/constants';
  * 4. 保存生成记录到历史
  */
 export async function POST(request: Request) {
-  let requestId = Math.random().toString(36).substring(7);
+  const requestId = Math.random().toString(36).substring(7);
   console.log(`[Generate API ${requestId}] Starting request`);
+
+  // ========== Rate Limiting 检查 ==========
+  const checkRateLimit = createRateLimiter(RATE_LIMITS.generate);
+  const rateLimitResponse = checkRateLimit(request);
+  if (rateLimitResponse) {
+    console.log(`[Generate API ${requestId}] Rate limit exceeded`);
+    return rateLimitResponse;
+  }
+  console.log(`[Generate API ${requestId}] Rate limit check passed`);
 
   try {
     // ========== 1. 创建Supabase客户端 ==========

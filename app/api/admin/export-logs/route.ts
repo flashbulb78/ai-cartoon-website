@@ -9,6 +9,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { SupabaseClient } from '@supabase/supabase-js';
 
+interface LoginLogRecord {
+  id: string;
+  user_id: string | null;
+  login_ip: string | null;
+  login_at: string;
+  device_type: string | null;
+  login_type: string;
+  location: string | null;
+  user_agent: string | null;
+  session_id: string | null;
+}
+
 /**
  * 检查用户是否为管理员
  */
@@ -25,7 +37,7 @@ async function isAdmin(supabase: SupabaseClient, userId: string): Promise<boolea
 /**
  * 将日志数据转换为CSV格式
  */
-function convertToCSV(logs: any[], userEmails: Record<string, string>): string {
+function convertToCSV(logs: LoginLogRecord[], userEmails: Record<string, string>): string {
   const headers = [
     'ID',
     '用户邮箱',

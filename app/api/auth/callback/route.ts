@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { getClientIp, getDeviceType, parseGeoLocation } from '@/lib/ip-parse';
+import { createRateLimiter, RATE_LIMITS } from '@/lib/rateLimit';
 
 /**
  * 检查用户是否为管理员
@@ -206,6 +207,13 @@ export async function POST(request: NextRequest) {
   // 支持 POST 请求（用于邮箱密码登录的日志记录）
   // 邮箱登录通过 AuthContext 客户端处理，但可以通过此接口补录日志
   
+  // ========== Rate Limiting 检查 ==========
+  const checkRateLimit = createRateLimiter(RATE_LIMITS.auth);
+  const rateLimitResponse = checkRateLimit(request);
+  if (rateLimitResponse) {
+    return rateLimitResponse;
+  }
+
   try {
     // 使用 @supabase/ssr 创建的客户端，自动获取认证信息
     const supabase = await createClient();

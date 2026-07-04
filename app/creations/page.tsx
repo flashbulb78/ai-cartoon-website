@@ -71,6 +71,7 @@ export default function CreationsPage() {
 
   useEffect(() => {
     if (user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchHistory(currentPage);
     }
   }, [user, currentPage, fetchHistory]);

@@ -88,6 +88,7 @@ export function useFaceCrop(): UseFaceCropReturn {
    * 预加载模型
    */
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadModels();
   }, [loadModels]);
 
@@ -205,6 +206,7 @@ export function useFaceCrop(): UseFaceCropReturn {
   return {
     isLoading,
     error,
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     isModelLoaded: isModelLoadedRef.current,
     cropFace,
     clearError,
@@ -235,8 +237,8 @@ function expandBoxToSquare(box: FaceBox, imageWidth: number, imageHeight: number
   const maxDim = Math.max(box.width, box.height) * (1 + margin);
   
   // 计算正方形边界（确保不超过图片边界）
-  let newWidth = maxDim;
-  let newHeight = maxDim;
+  const newWidth = maxDim;
+  const newHeight = maxDim;
   let newX = centerX - newWidth / 2;
   let newY = centerY - newHeight / 2;
   

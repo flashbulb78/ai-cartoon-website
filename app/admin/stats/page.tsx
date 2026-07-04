@@ -6,7 +6,7 @@
  * 展示各风格生成频次排行和可视化图表
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createClient, createAdminClient } from '@/lib/supabase/client';
 import { STYLE_OPTIONS } from '@/lib/constants';
 
@@ -53,14 +53,10 @@ export default function AdminStatsPage() {
   const [error, setError] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
 
-  useEffect(() => {
-    checkAdminAndFetchStats();
-  }, []);
-
   /**
    * 检查用户是否为管理员并获取统计数据
    */
-  const checkAdminAndFetchStats = async () => {
+  const checkAdminAndFetchStats = useCallback(async () => {
     try {
       const supabase = createClient();
       const adminClient = createAdminClient();
@@ -106,7 +102,13 @@ export default function AdminStatsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // 检查用户是否为管理员并获取统计数据
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    checkAdminAndFetchStats();
+  }, [checkAdminAndFetchStats]);
 
   /**
    * 渲染排行榜
@@ -260,7 +262,7 @@ export default function AdminStatsPage() {
               <p className="text-3xl font-bold text-gray-900">{stats.leaderboard?.length || 0}</p>
             </div>
             <div className="bg-white rounded-xl shadow-sm p-6">
-              <p className="text-sm text-gray-500 mb-1">Today's Generations</p>
+              <p className="text-sm text-gray-500 mb-1">Today&apos;s Generations</p>
               <p className="text-3xl font-bold text-gray-900">
                 {stats.dailyStats?.find(d => d.date === new Date().toISOString().split('T')[0])?.total || 0}
               </p>

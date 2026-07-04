@@ -24,13 +24,25 @@ async function handlePaymentSucceeded(
   supabaseAdmin: ReturnType<typeof createAdminClient>
 ) {
   const payment = event.data.payment;
-  if (!payment) return;
+  if (!payment) {
+    console.error('[DodoPayment Webhook] No payment data in event');
+    return;
+  }
   
   const userId = payment.metadata?.user_id;
   const orderId = payment.metadata?.order_id;
+  const creditsStr = payment.metadata?.credits;
   
   if (!userId) {
-    console.error('[DodoPayment Webhook] No user_id in metadata');
+    console.error('[DodoPayment Webhook] No user_id in payment metadata');
+    return;
+  }
+  
+  // 从 metadata 获取 credits 数量
+  const creditsToAdd = creditsStr ? parseInt(creditsStr, 10) : 0;
+  
+  if (creditsToAdd <= 0) {
+    console.error('[DodoPayment Webhook] Invalid credits value:', creditsStr);
     return;
   }
   
@@ -40,15 +52,45 @@ async function handlePaymentSucceeded(
     order_id: orderId,
     amount: payment.total_amount,
     currency: payment.currency,
+    credits_to_add: creditsToAdd,
   });
   
-  // 根据商品获取对应的 credits 数量
-  // 这里需要根据你的商品 ID 和 credits 的映射关系来计算
-  // 暂时从 transactions 表中通过 order_id 查找对应的 credits
+  // 1. 更新用户 credits（直接读取后更新）
+  const { data: currentProfile } = await supabaseAdmin
+    .from('profiles')
+    .select('credits')
+    .eq('id', userId)
+    .single();
   
-  // 更新用户 credits
-  // 由于我们不知道具体映射关系，暂时先记录交易
-  // 实际生产中需要在创建 checkout 时就把 credits 信息存入 metadata
+  if (currentProfile) {
+    const newCredits = (currentProfile.credits || 0) + creditsToAdd;
+    const { error: updateError } = await supabaseAdmin
+      .from('profiles')
+      .update({ credits: newCredits })
+      .eq('id', userId);
+    
+    if (updateError) {
+      console.error('[DodoPayment Webhook] Failed to update credits:', updateError);
+    } else {
+      console.log('[DodoPayment Webhook] Credits updated successfully:', newCredits);
+    }
+  } else {
+    console.error('[DodoPayment Webhook] Profile not found for user:', userId);
+  }
+  
+  // 2. 记录交易（用于审计）
+  await supabaseAdmin
+    .from('transactions')
+    .insert({
+      user_id: userId,
+      stripe_session_id: orderId || payment.payment_id,
+      amount: payment.total_amount,
+      credits: creditsToAdd,
+      type: 'purchase',
+      status: 'completed',
+    });
+  
+  console.log('[DodoPayment Webhook] Transaction recorded for user:', userId, 'credits:', creditsToAdd);
 }
 
 /**
@@ -141,7 +183,7 @@ export async function POST(request: NextRequest) {
     .insert({
       webhook_id: webhookId,
       event_type: event.event_type,
-      payload: event as any,
+      payload: event as unknown as Record<string, unknown>,
       status: 'received',
     });
   

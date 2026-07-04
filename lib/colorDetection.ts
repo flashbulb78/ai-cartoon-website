@@ -295,7 +295,7 @@ function getDominantColor(pixels: Uint8ClampedArray, region: { x: number; y: num
   const step = 4; // 采样间隔
   
   // [ROLLBACK POINT 12] 诊断：统计头发区域采样的像素亮度分布
-  let brightnessBuckets = { dark: 0, medium: 0, light: 0, bright: 0 };
+  const brightnessBuckets = { dark: 0, medium: 0, light: 0, bright: 0 };
   let totalSampled = 0;
   
   for (let py = region.y; py < region.y + region.h; py += 2) {

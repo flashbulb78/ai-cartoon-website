@@ -69,20 +69,6 @@ export default function AdminLogsPage() {
   const [showStatsModal, setShowStatsModal] = useState(false);
   
   /**
-   * 检查用户是否为管理员
-   */
-  const checkAdmin = useCallback(async (userId: string): Promise<boolean> => {
-    try {
-      const response = await fetch('/api/admin/login-logs', {
-        method: 'GET',
-      });
-      return response.status !== 403;
-    } catch {
-      return false;
-    }
-  }, []);
-  
-  /**
    * 加载日志列表
    */
   const loadLogs = useCallback(async (page: number = 1) => {
@@ -199,16 +185,20 @@ export default function AdminLogsPage() {
   // 加载日志
   useEffect(() => {
     if (user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadLogs(pagination.page);
     }
-  }, [user, pagination.page]);
+    // loadLogs is a stable callback that manages its own state transitions
+  }, [user, pagination.page, loadLogs]);
   
   // 筛选变化时重新加载
   useEffect(() => {
     if (user && !isLoading) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadLogs(1);
     }
-  }, [startTime, endTime, ipKeyword, loginTypeFilter]);
+    // loadLogs is a stable callback that manages its own state transitions
+  }, [user, isLoading, startTime, endTime, ipKeyword, loginTypeFilter, loadLogs]);
   
   if (authLoading || !user) {
     return (

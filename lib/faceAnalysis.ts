@@ -550,7 +550,7 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
   // ========== 方法3：优先检测镜片暗度（直接检测墨镜）==========
   // 墨镜的镜片暗度是最明显的特征，优先检测
   let lensBrightness = 255;
-  let isSunglasses = false;
+  const isSunglasses = false;
   
   if (imageData) {
     const { data, width, height } = imageData;
@@ -1336,8 +1336,8 @@ function loadImage(imageBase64: string): Promise<HTMLImageElement> {
     const img = new Image();
     img.onload = () => resolve(img);
     img.onerror = (event) => {
-      const error = new Error('Failed to load image');
-      (error as any).originalEvent = event;
+      const error = new Error('Failed to load image') as Error & { originalEvent?: unknown };
+      error.originalEvent = event;
       reject(error);
     };
     // 确保是有效的 data URL 格式
@@ -1751,7 +1751,7 @@ export function generateFullPrompt(
   if (result.accessories) {
     const acc = result.accessories;
     if (acc.hasGlasses && acc.glassesType !== 'unknown') {
-      let glassesDesc = acc.glassesType === 'normal' ? 'classic' : acc.glassesType;
+      const glassesDesc = acc.glassesType === 'normal' ? 'classic' : acc.glassesType;
       if (acc.glassesFrameColor && acc.glassesFrameColor !== 'unknown') {
         const frameColorMap: Record<string, string> = {
           'silver': 'silver/light gray',

@@ -44,11 +44,13 @@ export function useTheme() {
     const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
     
     if (stored && (stored === 'light' || stored === 'dark' || stored === 'system')) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setThemeState(stored);
       const resolved = stored === 'system' ? getSystemTheme() : stored;
       applyTheme(resolved);
     } else {
       // First visit - use system preference
+       
       setThemeState('system');
       applyTheme(getSystemTheme());
     }
