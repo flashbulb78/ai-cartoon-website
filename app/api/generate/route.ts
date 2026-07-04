@@ -111,7 +111,8 @@ export async function POST(request: Request) {
 
     // ========== 3. 获取并检查用户资料 ==========
     console.log(`[Generate API ${requestId}] Step 2: Fetching user profile`);
-    const { data: profile, error: profileError } = await supabase
+    // 使用 admin 客户端查询 profile（绕过 RLS，因为用户已通过 access token 验证）
+    const { data: profile, error: profileError } = await adminClient
       .from('profiles')
       .select('*')
       .eq('id', user.id)
