@@ -500,3 +500,173 @@ CREATE POLICY "Service role can manage webhook_logs" ON public.webhook_logs
 CREATE TRIGGER update_webhook_logs_updated_at
     BEFORE UPDATE ON public.webhook_logs
     FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+-- =====================================================
+-- 22. 修复Serverless环境下限流失效问题
+-- 使用数据库表存储限流计数器，确保多实例共享
+-- =====================================================
+CREATE TABLE IF NOT EXISTS public.rate_limits (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    identifier TEXT NOT NULL,                    -- 客户端标识符（IP、用户ID等）
+    action TEXT NOT NULL,                        -- 限流动作名称（如 'generate', 'api', 'auth'）
+    count INTEGER DEFAULT 1 NOT NULL,            -- 当前计数
+    window_start TIMESTAMPTZ DEFAULT NOW() NOT NULL,  -- 窗口开始时间
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(identifier, action)                   -- 同一标识符同一动作唯一
+);
+
+-- 创建索引
+CREATE INDEX IF NOT EXISTS idx_rate_limits_identifier ON public.rate_limits(identifier);
+CREATE INDEX IF NOT EXISTS idx_rate_limits_action ON public.rate_limits(action);
+CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON public.rate_limits(window_start);
+
+-- RLS策略：服务端可以所有操作（Service Role可以绕过RLS）
+CREATE POLICY "Service role can manage rate_limits" ON public.rate_limits
+    FOR ALL USING (true);
+
+-- 为rate_limits创建updated_at触发器
+CREATE TRIGGER update_rate_limits_updated_at
+    BEFORE UPDATE ON public.rate_limits
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+-- =====================================================
+-- 23. 原子性积分扣减函数
+-- 解决竞态条件：SELECT和UPDATE分离导致的问题
+-- =====================================================
+CREATE OR REPLACE FUNCTION public.atomic_deduct_credits(
+    p_user_id UUID,
+    p_amount INTEGER,
+    p_max_retries INTEGER DEFAULT 3
+)
+RETURNS TABLE(success BOOLEAN, new_credits INTEGER, error_message TEXT) AS $$
+DECLARE
+    v_current_credits INTEGER;
+    v_new_credits INTEGER;
+    v_retry_count INTEGER := 0;
+    v_sleep_time NUMERIC;
+BEGIN
+    -- 重试循环，处理可能的并发冲突
+    WHILE v_retry_count < p_max_retries LOOP
+        -- 锁定并获取当前积分（使用SELECT FOR UPDATE）
+        SELECT credits INTO v_current_credits
+        FROM public.profiles
+        WHERE id = p_user_id
+        FOR UPDATE;
+        
+        -- 检查用户是否存在
+        IF v_current_credits IS NULL THEN
+            RETURN QUERY SELECT FALSE, NULL::INTEGER, 'User not found'::TEXT;
+            RETURN;
+        END IF;
+        
+        -- 检查积分是否足够
+        IF v_current_credits < p_amount THEN
+            RETURN QUERY SELECT FALSE, v_current_credits, 'Insufficient credits'::TEXT;
+            RETURN;
+        END IF;
+        
+        -- 计算新积分
+        v_new_credits := v_current_credits - p_amount;
+        
+        -- 执行更新
+        UPDATE public.profiles
+        SET credits = v_new_credits, updated_at = NOW()
+        WHERE id = p_user_id;
+        
+        -- 检查是否更新成功（affected rows = 1）
+        IF FOUND THEN
+            RETURN QUERY SELECT TRUE, v_new_credits, NULL::TEXT;
+            RETURN;
+        END IF;
+        
+        -- 如果更新失败（可能被其他事务更新），重试
+        v_retry_count := v_retry_count + 1;
+        v_sleep_time := 0.1 * v_retry_count; -- 递增延迟：100ms, 200ms, 300ms
+        PERFORM pg_sleep(v_sleep_time);
+    END LOOP;
+    
+    -- 达到最大重试次数
+    RETURN QUERY SELECT FALSE, v_current_credits, 'Transaction conflict, please retry'::TEXT;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- =====================================================
+-- 24. 数据库限流检查函数
+-- 使用数据库实现真正的分布式限流
+-- =====================================================
+CREATE OR REPLACE FUNCTION public.check_rate_limit(
+    p_identifier TEXT,
+    p_action TEXT,
+    p_max_requests INTEGER,
+    p_window_seconds INTEGER
+)
+RETURNS TABLE(allowed BOOLEAN, remaining INTEGER, reset_in_seconds INTEGER) AS $$
+DECLARE
+    v_record RECORD;
+    v_now TIMESTAMPTZ := NOW();
+    v_window_start TIMESTAMPTZ;
+    v_count INTEGER;
+    v_reset_in INTEGER;
+BEGIN
+    -- 计算当前窗口开始时间
+    v_window_start := v_now - (p_window_seconds || ' seconds')::INTERVAL;
+    
+    -- 查找现有记录
+    SELECT id, count, window_start INTO v_record
+    FROM public.rate_limits
+    WHERE identifier = p_identifier AND action = p_action
+    FOR UPDATE;
+    
+    IF NOT FOUND THEN
+        -- 没有记录，创建新记录（允许请求）
+        INSERT INTO public.rate_limits (identifier, action, count, window_start)
+        VALUES (p_identifier, p_action, 1, v_now);
+        
+        RETURN QUERY SELECT TRUE, p_max_requests - 1, p_window_seconds;
+        RETURN;
+    END IF;
+    
+    -- 检查窗口是否过期
+    IF v_record.window_start < v_window_start THEN
+        -- 窗口过期，重置计数器
+        UPDATE public.rate_limits
+        SET count = 1, window_start = v_now
+        WHERE id = v_record.id;
+        
+        RETURN QUERY SELECT TRUE, p_max_requests - 1, p_window_seconds;
+        RETURN;
+    END IF;
+    
+    -- 窗口未过期，检查计数
+    v_count := v_record.count;
+    v_reset_in := EXTRACT(EPOCH FROM (v_record.window_start + (p_window_seconds || ' seconds')::INTERVAL - v_now))::INTEGER;
+    
+    IF v_count >= p_max_requests THEN
+        -- 超过限制
+        RETURN QUERY SELECT FALSE, 0, GREATEST(v_reset_in, 0);
+        RETURN;
+    END IF;
+    
+    -- 未超过限制，增加计数
+    UPDATE public.rate_limits
+    SET count = count + 1
+    WHERE id = v_record.id;
+    
+    RETURN QUERY SELECT TRUE, p_max_requests - v_count - 1, GREATEST(v_reset_in, 0);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 清理过期限流记录的函数（可定期调用）
+CREATE OR REPLACE FUNCTION public.cleanup_expired_rate_limits(p_max_age_hours INTEGER DEFAULT 24)
+RETURNS INTEGER AS $$
+DECLARE
+    v_deleted INTEGER;
+BEGIN
+    DELETE FROM public.rate_limits
+    WHERE window_start < NOW() - (p_max_age_hours || ' hours')::INTERVAL;
+    
+    GET DIAGNOSTICS v_deleted = ROW_COUNT;
+    RETURN v_deleted;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;

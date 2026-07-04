@@ -395,7 +395,7 @@ export default function AdminLogsPage() {
                   variant="secondary"
                   size="sm"
                   disabled={pagination.page <= 1}
-                  onClick={() => setPagination(p => ({ ...p, page: p.page - 1 }))}
+                  onClick={() => loadLogs(pagination.page - 1)}
                 >
                   上一页
                 </Button>
@@ -403,7 +403,7 @@ export default function AdminLogsPage() {
                   variant="secondary"
                   size="sm"
                   disabled={pagination.page >= pagination.totalPages}
-                  onClick={() => setPagination(p => ({ ...p, page: p.page + 1 }))}
+                  onClick={() => loadLogs(pagination.page + 1)}
                 >
                   下一页
                 </Button>

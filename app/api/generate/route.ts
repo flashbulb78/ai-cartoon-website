@@ -229,23 +229,33 @@ export async function POST(request: Request) {
       console.log(`[Generate API ${requestId}] Generation successful, processing credits and saving record`);
 
       // 9.1 扣减用户次数（非Premium用户）- 仅在成功后执行，使用动态值
-      // 使用条件更新防止竞态条件：只有余额足够时才扣减
+      // 使用原子性数据库函数避免竞态条件
       if (!profile.is_premium) {
-        console.log(`[Generate API ${requestId}] Decrementing ${creditsToDeduct} credits from:`, profile.credits);
+        console.log(`[Generate API ${requestId}] Calling atomic_deduct_credits for user:`, user.id, 'amount:', creditsToDeduct);
         
-        // 原子性条件更新：如果当前余额仍足够，则扣减
-        // 如果另一个请求已扣减，.gte条件不满足则更新失败
-        const { error: updateError } = await adminClient
-          .from('profiles')
-          .update({ credits: profile.credits - creditsToDeduct })
-          .eq('id', user.id)
-          .gte('credits', creditsToDeduct);
-
-        if (updateError) {
-          console.error(`[Generate API ${requestId}] Failed to decrement credits:`, updateError);
-        } else {
-          // 检查是否有行被更新（如果没有，说明余额已被其他请求扣减）
-          console.log(`[Generate API ${requestId}] Credits decremented successfully`);
+        // 调用原子性扣积分函数（带重试机制的数据库事务）
+        const { data: deductResult, error: deductError } = await adminClient
+          .rpc('atomic_deduct_credits', {
+            p_user_id: user.id,
+            p_amount: creditsToDeduct,
+            p_max_retries: 3,
+          })
+          .single();
+        
+        if (deductError) {
+          console.error(`[Generate API ${requestId}] Failed to call atomic_deduct_credits:`, deductError);
+        } else if (deductResult) {
+          const result = Array.isArray(deductResult) ? deductResult[0] : deductResult;
+          if (result.success) {
+            console.log(`[Generate API ${requestId}] Credits decremented successfully, new balance:`, result.new_credits);
+          } else {
+            console.error(`[Generate API ${requestId}] Credit deduction failed:`, result.error_message);
+            // 积分不足时返回错误，但不返回500（这是业务逻辑错误，不是系统错误）
+            return NextResponse.json<ApiResponse<GenerateResponseData>>(
+              { success: false, error: result.error_message || 'Insufficient credits' },
+              { status: 403 }
+            );
+          }
         }
       }
 
