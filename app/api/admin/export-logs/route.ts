@@ -115,7 +115,7 @@ export async function GET(request: NextRequest) {
     }
     
     // 5. 获取用户邮箱
-    const userIds = [...new Set(logs?.map(log => log.user_id).filter(Boolean) || [])];
+    const userIds = [...new Set(logs?.map((log: { user_id: string | null }) => log.user_id).filter(Boolean) || [])];
     let userEmails: Record<string, string> = {};
     
     if (userIds.length > 0) {
@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
         .select('id, email')
         .in('id', userIds);
       
-      userEmails = (profiles || []).reduce((acc, profile) => {
+      userEmails = (profiles || []).reduce((acc: Record<string, string>, profile: { id: string; email: string | null }) => {
         acc[profile.id] = profile.email || 'Unknown';
         return acc;
       }, {} as Record<string, string>);

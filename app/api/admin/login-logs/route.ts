@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
     }
     
     // 6. 获取关联的用户信息（邮箱）
-    const userIds = [...new Set(logs?.map(log => log.user_id).filter(Boolean) || [])];
+    const userIds = [...new Set(logs?.map((log: { user_id: string | null }) => log.user_id).filter(Boolean) || [])];
     let userEmails: Record<string, string> = {};
     
     if (userIds.length > 0) {
@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
         .select('id, email')
         .in('id', userIds);
       
-      userEmails = (profiles || []).reduce((acc, profile) => {
+      userEmails = (profiles || []).reduce((acc: Record<string, string>, profile: { id: string; email: string | null }) => {
         acc[profile.id] = profile.email || 'Unknown';
         return acc;
       }, {} as Record<string, string>);
@@ -121,7 +121,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        logs: logs?.map(log => ({
+        logs: logs?.map((log: { user_id: string | null }) => ({
           ...log,
           user_email: log.user_id ? userEmails[log.user_id] : 'Guest',
         })),
