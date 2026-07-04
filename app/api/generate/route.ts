@@ -60,12 +60,16 @@ export async function POST(request: Request) {
     // ========== 2.2 获取用户会话 ==========
     // 手动从 cookie 中解析 access_token
     const cookieHeader = request.headers.get('cookie') || '';
-    const cookies = Object.fromEntries(
-      cookieHeader.split(';').map(c => {
-        const [key, ...val] = c.trim().split('=');
-        return [key, val.join('=')];
-      })
-    );
+    console.log(`[Generate API ${requestId}] Raw cookie header:`, cookieHeader.substring(0, 300));
+    
+    const cookies: Record<string, string> = {};
+    cookieHeader.split(';').forEach(c => {
+      const [key, ...val] = c.trim().split('=');
+      if (key) {
+        cookies[key] = val.join('=');
+      }
+    });
+    console.log(`[Generate API ${requestId}] Parsed cookies keys:`, Object.keys(cookies));
     
     // 找到 Supabase auth cookie
     const supabaseCookieName = Object.keys(cookies).find(k => k.includes('supabase') || k.includes('sb-'));
