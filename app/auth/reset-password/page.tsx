@@ -5,13 +5,17 @@
  * 重置密码页面 - 用户点击邮件链接后访问此页面设置新密码
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/Button';
 
-export default function ResetPasswordPage() {
+/**
+ * 内部组件：处理密码重置表单
+ * 使用 useSearchParams 需要被 Suspense 包裹
+ */
+function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [password, setPassword] = useState('');
@@ -21,9 +25,6 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // 检查是否有 token 参数
-  const hasToken = searchParams.has('access_token') || searchParams.has('refresh_token');
-
   // 初始化：处理 token 并恢复 session
   useEffect(() => {
     const initSession = async () => {
@@ -31,7 +32,7 @@ export default function ResetPasswordPage() {
         const supabase = createClient();
         
         // 检查当前 session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        const { data: { session } } = await supabase.auth.getSession();
         
         if (session) {
           console.log('[ResetPassword] Session already exists');
@@ -261,5 +262,30 @@ export default function ResetPasswordPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * 加载中的占位组件
+ */
+function ResetPasswordLoading() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center p-4">
+      <div className="text-center">
+        <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-gray-600">Loading...</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 页面组件 - 包裹在 Suspense 中
+ */
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<ResetPasswordLoading />}>
+      <ResetPasswordForm />
+    </Suspense>
   );
 }
