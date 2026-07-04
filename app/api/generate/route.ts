@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
   // ========== Rate Limiting 检查 ==========
   const checkRateLimit = createRateLimiter(RATE_LIMITS.generate);
-  const rateLimitResponse = checkRateLimit(request);
+  const rateLimitResponse = await checkRateLimit(request);
   if (rateLimitResponse) {
     console.log(`[Generate API ${requestId}] Rate limit exceeded`);
     return rateLimitResponse;
