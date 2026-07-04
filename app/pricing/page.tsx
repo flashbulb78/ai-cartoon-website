@@ -73,16 +73,16 @@ export default function PricingPage() {
 
     setIsPurchasing(packageId);
     try {
-      const response = await fetch('/api/pricing/purchase', {
+      const response = await fetch('/api/dodo/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ packageId }),
+        body: JSON.stringify({ product_id: packageId }),
       });
 
       const result = await response.json();
 
-      if (result.success && result.data?.sessionUrl) {
-        window.location.href = result.data.sessionUrl;
+      if (result.success && result.data?.checkout_url) {
+        window.location.href = result.data.checkout_url;
       } else {
         alert(result.error || 'Failed to initiate purchase. Please try again.');
       }
