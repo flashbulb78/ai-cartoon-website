@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     // 3. 获取商品信息以计算 credits
     const { data: pricingPackage, error: packageError } = await supabase
       .from('pricing_packages')
-      .select('credits, name')
+      .select('credits, name, dodo_product_id')
       .eq('id', product_id)
       .eq('is_active', true)
       .single();
@@ -63,12 +63,29 @@ export async function POST(request: NextRequest) {
     const totalCredits = pricingPackage.credits * quantity;
     
     // 4. 构建 DodoPayment 请求
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+    if (!baseUrl) {
+      console.error('[DodoPayment] NEXT_PUBLIC_BASE_URL not configured');
+      return NextResponse.json(
+        { success: false, error: 'Server configuration error' },
+        { status: 500 }
+      );
+    }
     const orderId = `order_${Date.now()}_${user.id.slice(0, 8)}`;
+    
+    // 使用 DodoPayment 的产品 ID
+    const dodoProductId = pricingPackage.dodo_product_id;
+    if (!dodoProductId) {
+      console.error('[DodoPayment] DodoProductId not configured for package:', product_id);
+      return NextResponse.json(
+        { success: false, error: 'Payment product not configured' },
+        { status: 400 }
+      );
+    }
     
     const checkoutRequest: DodoCheckoutRequest = {
       product_cart: [
-        { product_id, quantity }
+        { product_id: dodoProductId, quantity }
       ],
       customer: {
         email: user.email,
