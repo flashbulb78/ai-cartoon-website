@@ -63,7 +63,8 @@ export async function POST(request: NextRequest) {
     const totalCredits = pricingPackage.credits * quantity;
     
     // 4. 构建 DodoPayment 请求
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL?.trim();
+    console.log('[DodoPayment] Using baseUrl:', JSON.stringify(baseUrl));
     if (!baseUrl) {
       console.error('[DodoPayment] NEXT_PUBLIC_BASE_URL not configured');
       return NextResponse.json(
@@ -71,6 +72,7 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+    console.log('[DodoPayment] Full return_url:', `${baseUrl}/checkout/success`);
     const orderId = `order_${Date.now()}_${user.id.slice(0, 8)}`;
     
     // 使用 DodoPayment 的产品 ID
