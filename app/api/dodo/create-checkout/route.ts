@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     const totalCredits = pricingPackage.credits * quantity;
     
     // 4. 构建 DodoPayment 请求
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL?.trim();
+    let baseUrl = process.env.NEXT_PUBLIC_BASE_URL?.trim();
     console.log('[DodoPayment] Using baseUrl:', JSON.stringify(baseUrl));
     if (!baseUrl) {
       console.error('[DodoPayment] NEXT_PUBLIC_BASE_URL not configured');
@@ -71,6 +71,10 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'Server configuration error' },
         { status: 500 }
       );
+    }
+    // 确保 URL 有 https:// 前缀
+    if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+      baseUrl = `https://${baseUrl}`;
     }
     console.log('[DodoPayment] Full return_url:', `${baseUrl}/checkout/success`);
     const orderId = `order_${Date.now()}_${user.id.slice(0, 8)}`;
