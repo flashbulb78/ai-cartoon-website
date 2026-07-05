@@ -108,8 +108,11 @@ export async function POST(request: NextRequest) {
       billing_currency: 'USD',
     };
     
+    console.log('[DodoPayment] Calling createCheckoutSession with:', JSON.stringify(checkoutRequest));
+    
     // 4. 调用 DodoPayment API
     const checkout = await createCheckoutSession(checkoutRequest);
+    console.log('[DodoPayment] createCheckoutSession returned:', JSON.stringify(checkout));
     
     // 5. 返回结账 URL
     return NextResponse.json({
