@@ -10,13 +10,15 @@ import { Button } from '@/components/ui/Button';
 export default async function CheckoutSuccessPage({
   searchParams,
 }: {
-  searchParams: Promise<{ session_id?: string }>;
+  searchParams: Promise<{ payment_id?: string; session_id?: string; status?: string; email?: string }>;
 }) {
   const params = await searchParams;
-  const sessionId = params.session_id;
+  const paymentId = params.payment_id || params.session_id;
+  const status = params.status;
+  const email = params.email;
 
-  // If no session ID, show error
-  if (!sessionId) {
+  // If no payment/session ID, show error
+  if (!paymentId) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center px-4">
         <div className="max-w-md w-full">
@@ -68,7 +70,7 @@ export default async function CheckoutSuccessPage({
       const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/checkout/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify({ paymentId }),
       });
 
       const result = await response.json();
