@@ -158,10 +158,11 @@ export async function createCheckoutSession(params: DodoCheckoutRequest): Promis
   }
   
   const data = await response.json();
+  console.log('[DodoPayment] Full response data:', JSON.stringify(data));
   
   return {
     session_id: data.session_id,
-    url: data.url,
+    url: data.url || data.checkout_url || data.redirect_url || `https://checkout.dodopayments.com?session=${data.session_id}`,
     expires_at: data.expires_at,
   };
 }
