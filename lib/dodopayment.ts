@@ -119,8 +119,12 @@ export function verifyWebhookSignature(
     // 1. 构造待签名字符串: webhook_id + "." + webhook_timestamp + "." + raw_body
     const signedPayload = `${webhookId}.${webhookTimestamp}.${body.toString('utf8')}`;
     
-    // 2. Base64 解码密钥 (Webhook Secret 需要先解码)
-    const decodedKey = Buffer.from(secret, 'base64');
+    // 2. 提取实际密钥并解码 (whsec_xxxx -> Base64 decoded)
+    const secretValue = secret.startsWith('whsec_') ? secret.slice(6) : secret;
+    console.log('[DodoPayment] Secret value length (after stripping prefix):', secretValue.length);
+    
+    // 3. Base64 解码密钥
+    const decodedKey = Buffer.from(secretValue, 'base64');
     console.log('[DodoPayment] Decoded key length:', decodedKey.length);
     
     // 3. 使用解码后的密钥计算 HMAC SHA256
