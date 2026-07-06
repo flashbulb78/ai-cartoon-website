@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/server';
 import { Button } from '@/components/ui/Button';
 
 /**
@@ -58,7 +58,7 @@ export default async function CheckoutSuccessPage({
   let isSuccess = false;
 
   try {
-    const supabase = createClient();
+    const supabase = await createClient();
 
     // Get current user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
