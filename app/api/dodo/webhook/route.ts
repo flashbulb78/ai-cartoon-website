@@ -23,9 +23,10 @@ async function handlePaymentSucceeded(
   event: DodoWebhookEvent,
   supabaseAdmin: ReturnType<typeof createAdminClient>
 ) {
-  const payment = event.data.payment;
-  if (!payment) {
-    console.error('[DodoPayment Webhook] No payment data in event');
+  // DodoPayment sends payment data directly in event.data, not event.data.payment
+  const payment = event.data as unknown as DodoWebhookEvent['data']['payment'];
+  if (!payment || !payment.payment_id) {
+    console.error('[DodoPayment Webhook] No payment data in event', { eventData: event.data });
     return;
   }
   
@@ -100,8 +101,9 @@ async function handlePaymentFailed(
   event: DodoWebhookEvent,
   supabaseAdmin: ReturnType<typeof createAdminClient>
 ) {
-  const payment = event.data.payment;
-  if (!payment) return;
+  // DodoPayment sends payment data directly in event.data, not event.data.payment
+  const payment = event.data as unknown as DodoWebhookEvent['data']['payment'];
+  if (!payment || !payment.payment_id) return;
   
   console.log('[DodoPayment Webhook] Payment failed:', {
     payment_id: payment.payment_id,
