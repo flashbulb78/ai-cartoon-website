@@ -116,12 +116,16 @@ export function verifyWebhookSignature(
       secretLength: secret?.length,
     });
     
-    // 构造签名字符串: webhook_id + "." + webhook_timestamp + "." + raw_body
+    // 1. 构造待签名字符串: webhook_id + "." + webhook_timestamp + "." + raw_body
     const signedPayload = `${webhookId}.${webhookTimestamp}.${body.toString('utf8')}`;
     
-    // 计算 HMAC SHA256
+    // 2. Base64 解码密钥 (Webhook Secret 需要先解码)
+    const decodedKey = Buffer.from(secret, 'base64');
+    console.log('[DodoPayment] Decoded key length:', decodedKey.length);
+    
+    // 3. 使用解码后的密钥计算 HMAC SHA256
     const expectedSignature = crypto
-      .createHmac('sha256', secret)
+      .createHmac('sha256', decodedKey)
       .update(signedPayload)
       .digest('base64');
     
@@ -129,7 +133,6 @@ export function verifyWebhookSignature(
     
     console.log('[DodoPayment] Expected signature:', expectedSignature);
     console.log('[DodoPayment] Provided signature:', providedSignature);
-    console.log('[DodoPayment] Signed payload (first 300 chars):', signedPayload.substring(0, 300));
     
     // 使用 timing-safe 比较
     return crypto.timingSafeEqual(
