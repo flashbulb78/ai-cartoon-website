@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/Button';
 
 /**
  * app/checkout/success/page.tsx
- * Stripe checkout success page
- * Handles post-payment credit addition
+ * DodoPayment checkout success page
+ * Displays payment success and current credits
  */
 export default async function CheckoutSuccessPage({
   searchParams,

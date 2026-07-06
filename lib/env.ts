@@ -27,8 +27,8 @@ const OPTIONAL_ENV_VARS = [
   'FACE_SIMILARITY_STRENGTH',
   'STYLE_STRENGTH',
   'FIDELITY',
-  'STRIPE_SECRET_KEY',
-  'STRIPE_WEBHOOK_SECRET',
+  'DODOPAYMENT_API_KEY',
+  'DODOPAYMENT_WEBHOOK_KEY',
 ] as const;
 
 /**
@@ -134,10 +134,10 @@ export function logEnvironmentStatus(): void {
 }
 
 /**
- * 检查Stripe是否配置
+ * 检查DodoPayment是否配置
  */
-export function isStripeConfigured(): boolean {
-  return !!process.env.STRIPE_SECRET_KEY;
+export function isDodoPaymentConfigured(): boolean {
+  return !!process.env.DODOPAYMENT_API_KEY;
 }
 
 /**

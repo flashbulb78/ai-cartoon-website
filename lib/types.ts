@@ -204,14 +204,14 @@ export interface UserCredits {
 }
 
 /**
- * 套餐信息（预留Stripe）
+ * 套餐信息（预留DodoPayment）
  */
 export interface Plan {
   id: string;
   name: string;
   credits: number;
   price: number;
-  priceId: string;  // Stripe Price ID
+  priceId: string;  // DodoPayment Price ID
 }
 
 /**

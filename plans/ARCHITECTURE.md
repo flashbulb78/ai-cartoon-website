@@ -164,7 +164,7 @@ interface GenerateResponse {
 - 用户资料管理
 
 ### 7.2 付费功能
-- Stripe支付集成
+- DodoPayment支付集成
 - 定价套餐管理
 - 积分系统
 - Premium会员

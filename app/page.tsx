@@ -16,7 +16,7 @@
  * - 次数不足时引导充值
  *
  * 预留扩展：
- * - Stripe付费功能（onUpgrade props）
+ * - DodoPayment付费功能（onUpgrade props）
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
@@ -251,11 +251,11 @@ export default function HomePage() {
   }, []);
 
   /**
-   * 升级按钮（预留Stripe）
+   * 升级按钮（预留DodoPayment）
    */
   const handleUpgrade = useCallback(() => {
-    // TODO: 跳转Stripe支付页
-    console.log('Upgrade clicked - Stripe payment');
+    // TODO: 跳转DodoPayment支付页
+    console.log('Upgrade clicked - DodoPayment');
   }, []);
 
   return (
