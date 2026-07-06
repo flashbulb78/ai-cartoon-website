@@ -53,7 +53,8 @@ export default async function CheckoutSuccessPage({
   }
 
   // Process payment on server
-  let creditsAdded = 0;
+  // Note: DodoPayment adds credits via webhook, so we just need to show success and fetch updated credits
+  let credits = 0;
   let errorMessage: string | null = null;
   let isSuccess = false;
 
@@ -66,20 +67,19 @@ export default async function CheckoutSuccessPage({
     if (authError || !user) {
       errorMessage = 'Please login to continue';
     } else {
-      // Call API to verify and add credits
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/checkout/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paymentId }),
-      });
+      // Fetch user's current credits (webhook already added them via DodoPayment)
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('credits')
+        .eq('id', user.id)
+        .single();
 
-      const result = await response.json();
-
-      if (result.success && result.data?.credits) {
-        creditsAdded = result.data.credits;
-        isSuccess = true;
+      if (profileError) {
+        console.error('Error fetching profile:', profileError);
+        errorMessage = 'Failed to load credits';
       } else {
-        errorMessage = result.error || 'Failed to add credits';
+        credits = profile?.credits || 0;
+        isSuccess = true;
       }
     }
   } catch (err) {
@@ -102,7 +102,7 @@ export default async function CheckoutSuccessPage({
               Payment Successful!
             </h2>
             <p className="text-gray-600 mb-6">
-              {creditsAdded} credits have been added to your account.
+              You now have {credits} credits in your account.
             </p>
             <div className="space-y-3">
               <Link href="/" className="block">
