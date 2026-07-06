@@ -127,11 +127,9 @@ export function verifyWebhookSignature(
     
     const providedSignature = webhookSignature.replace('v1,', '');
     
-    console.log('[DodoPayment] Signature comparison:', {
-      expectedSignatureLength: expectedSignature.length,
-      providedSignatureLength: providedSignature.length,
-      signaturesMatch: expectedSignature === providedSignature,
-    });
+    console.log('[DodoPayment] Expected signature:', expectedSignature);
+    console.log('[DodoPayment] Provided signature:', providedSignature);
+    console.log('[DodoPayment] Signed payload (first 300 chars):', signedPayload.substring(0, 300));
     
     // 使用 timing-safe 比较
     return crypto.timingSafeEqual(
