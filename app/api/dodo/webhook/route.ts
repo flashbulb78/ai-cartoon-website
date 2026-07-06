@@ -152,9 +152,9 @@ export async function POST(request: NextRequest) {
     );
   }
   
-  console.log('[DodoPayment Webhook] Received event:', event.event_type, {
+  console.log('[DodoPayment Webhook] Received event:', event.type, {
     event_id: event.event_id,
-    payment_id: event.data.payment?.payment_id,
+    payment_id: event.data?.payment?.payment_id,
   });
   
   // 5. 幂等检查 - 使用 webhook-id 去重
@@ -187,8 +187,8 @@ export async function POST(request: NextRequest) {
   // 业务逻辑在后台异步处理
   setImmediate(async () => {
     try {
-      // 根据事件类型处理
-      switch (event.event_type) {
+      // 根据事件类型处理 (使用 type 字段)
+      switch (event.type) {
         case 'payment.succeeded':
           await handlePaymentSucceeded(event, supabaseAdmin);
           // 更新 webhook 状态
@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
           break;
           
         default:
-          console.log('[DodoPayment Webhook] Unhandled event type:', event.event_type);
+          console.log('[DodoPayment Webhook] Unhandled event type:', event.type);
       }
     } catch (error) {
       console.error('[DodoPayment Webhook] Error processing event:', error);

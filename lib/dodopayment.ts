@@ -74,8 +74,9 @@ export type DodoPaymentStatus =
 
 export interface DodoWebhookEvent {
   event_id: string;
-  event_type: string;
-  created_at: string;
+  type: string;  // DodoPayment uses 'type' instead of 'event_type'
+  event_type?: string;  // Keep for compatibility
+  timestamp: string;
   data: {
     payment?: DodoPayment;
     checkout_session?: {
