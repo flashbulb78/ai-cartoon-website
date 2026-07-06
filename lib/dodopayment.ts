@@ -107,6 +107,15 @@ export function verifyWebhookSignature(
     const secret = DODOPAYMENT_WEBHOOK_KEY;
     const body = typeof rawBody === 'string' ? Buffer.from(rawBody) : rawBody;
     
+    // Debug logging
+    console.log('[DodoPayment] Signature verification debug:', {
+      webhookId,
+      webhookTimestamp,
+      webhookSignatureLength: webhookSignature?.length,
+      bodyLength: body.length,
+      secretLength: secret?.length,
+    });
+    
     // 构造签名字符串: webhook_id + "." + webhook_timestamp + "." + raw_body
     const signedPayload = `${webhookId}.${webhookTimestamp}.${body.toString('utf8')}`;
     
@@ -116,10 +125,18 @@ export function verifyWebhookSignature(
       .update(signedPayload)
       .digest('base64');
     
+    const providedSignature = webhookSignature.replace('v1,', '');
+    
+    console.log('[DodoPayment] Signature comparison:', {
+      expectedSignatureLength: expectedSignature.length,
+      providedSignatureLength: providedSignature.length,
+      signaturesMatch: expectedSignature === providedSignature,
+    });
+    
     // 使用 timing-safe 比较
     return crypto.timingSafeEqual(
       Buffer.from(expectedSignature),
-      Buffer.from(webhookSignature.replace('v1,', ''))
+      Buffer.from(providedSignature)
     );
   } catch (error) {
     console.error('[DodoPayment] Signature verification failed:', error);
