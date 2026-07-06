@@ -178,46 +178,43 @@ export async function POST(request: NextRequest) {
     .from('webhook_logs')
     .insert({
       webhook_id: webhookId,
-      event_type: event.event_type,
+      event_type: event.type,
       payload: event as unknown as Record<string, unknown>,
       status: 'received',
     });
   
-  // 7. 立即返回 200（不能再晚了，否则会被 Dodo 重试）
-  // 业务逻辑在后台异步处理
-  setImmediate(async () => {
-    try {
-      // 根据事件类型处理 (使用 type 字段)
-      switch (event.type) {
-        case 'payment.succeeded':
-          await handlePaymentSucceeded(event, supabaseAdmin);
-          // 更新 webhook 状态
-          await supabaseAdmin
-            .from('webhook_logs')
-            .update({ status: 'processed' })
-            .eq('webhook_id', webhookId);
-          break;
-          
-        case 'payment.failed':
-          await handlePaymentFailed(event, supabaseAdmin);
-          await supabaseAdmin
-            .from('webhook_logs')
-            .update({ status: 'processed' })
-            .eq('webhook_id', webhookId);
-          break;
-          
-        default:
-          console.log('[DodoPayment Webhook] Unhandled event type:', event.type);
-      }
-    } catch (error) {
-      console.error('[DodoPayment Webhook] Error processing event:', error);
-      // 更新为失败状态
-      await supabaseAdmin
-        .from('webhook_logs')
-        .update({ status: 'failed', error: String(error) })
-        .eq('webhook_id', webhookId);
+  // 7. 处理事件（同步处理，确保在 serverless 环境中可靠执行）
+  try {
+    // 根据事件类型处理 (使用 type 字段)
+    switch (event.type) {
+      case 'payment.succeeded':
+        await handlePaymentSucceeded(event, supabaseAdmin);
+        // 更新 webhook 状态
+        await supabaseAdmin
+          .from('webhook_logs')
+          .update({ status: 'processed' })
+          .eq('webhook_id', webhookId);
+        break;
+        
+      case 'payment.failed':
+        await handlePaymentFailed(event, supabaseAdmin);
+        await supabaseAdmin
+          .from('webhook_logs')
+          .update({ status: 'processed' })
+          .eq('webhook_id', webhookId);
+        break;
+        
+      default:
+        console.log('[DodoPayment Webhook] Unhandled event type:', event.type);
     }
-  });
-  
+  } catch (error) {
+    console.error('[DodoPayment Webhook] Error processing event:', error);
+    // 更新为失败状态
+    await supabaseAdmin
+      .from('webhook_logs')
+      .update({ status: 'failed', error: String(error) })
+      .eq('webhook_id', webhookId);
+  }
+
   return NextResponse.json({ received: true });
 }
