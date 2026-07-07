@@ -27,8 +27,9 @@ const OPTIONAL_ENV_VARS = [
   'FACE_SIMILARITY_STRENGTH',
   'STYLE_STRENGTH',
   'FIDELITY',
-  'DODOPAYMENT_API_KEY',
-  'DODOPAYMENT_WEBHOOK_KEY',
+  'DODO_PAYMENTS_API_KEY',
+  'DODO_PAYMENTS_WEBHOOK_KEY',
+  'DODO_PAYMENTS_ENVIRONMENT',
 ] as const;
 
 /**
@@ -137,7 +138,7 @@ export function logEnvironmentStatus(): void {
  * 检查DodoPayment是否配置
  */
 export function isDodoPaymentConfigured(): boolean {
-  return !!process.env.DODOPAYMENT_API_KEY;
+  return !!process.env.DODO_PAYMENTS_API_KEY;
 }
 
 /**
