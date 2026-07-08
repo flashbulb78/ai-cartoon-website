@@ -147,7 +147,7 @@ function ResetPasswordForm() {
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-3">
             <img
-              src="/avatar_logo_120.jpg"
+              src="/logo_192.png"
               alt="Magic Cartoon Avatar Logo"
               className="w-12 h-12 rounded-xl object-cover shadow-lg"
             />

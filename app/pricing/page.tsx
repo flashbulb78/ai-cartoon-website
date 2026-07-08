@@ -103,11 +103,11 @@ export default function PricingPage() {
             {/* Logo */}
             <Link href="/" className="flex items-center gap-3">
               <img
-                src="/avatar_logo_120.jpg"
+                src="/logo_192.png"
                 alt="Magic Cartoon Avatar Logo"
                 className="w-10 h-10 rounded-xl object-cover shadow-md"
               />
-              <span className="text-xl font-bold text-gray-900">AI Cartoon</span>
+              <span className="text-xl font-bold text-gray-900">Magic Cartoon Avatar</span>
             </Link>
 
             {/* Nav */}
