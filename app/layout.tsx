@@ -11,6 +11,10 @@ export const metadata: Metadata = {
     description: "Transform your photos into stunning cartoon art with AI",
     type: "website",
   },
+  icons: {
+    icon: '/favicon.ico',
+    apple: '/apple-touch-icon.png',
+  },
 };
 
 export default function RootLayout({
