@@ -153,7 +153,10 @@ function detectGenderEnhanced(
   if (jawLine === 'soft') femaleScore += 0.25 * faceFeatureWeight;
   else if (jawLine === 'sharp') maleScore += 0.10 * faceFeatureWeight;
   
-  if (lipShape === 'full') femaleScore += 0.50 * faceFeatureWeight;
+  // [Rollback Point 43 - ISSUE-4] 修复：降低 lipShape='full' 权重从 0.50 到 0.25
+  // 原因：full 嘴唇不是强烈的女性特征，厚嘴唇男性也很常见
+  // 问题照片：无胡子白人男性被误判为 female，因为 full 嘴唇 + 高 femaleScore
+  if (lipShape === 'full') femaleScore += 0.25 * faceFeatureWeight;  // [ROLLBACK POINT 43 - ISSUE-4]
   else if (lipShape === 'thin') maleScore += 0.20 * faceFeatureWeight;
   
   // 第六层：配饰检测
@@ -632,14 +635,14 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
   // 解决方案：
   // - hasGlassesByStrongLandmarks 的 frameEdgeScore 从 0.50 降到 0.45
   // - 新增专用 sunglasses 检测条件：lensBrightness < 100 且 frameEdgeScore > 0.40
-  const hasGlassesByStrongLandmarks = landmarkScore >= 2 && frameEdgeScore > 0.45;
+  const hasGlassesByStrongLandmarks = landmarkScore >= 2 && frameEdgeScore > 0.70 // [ROLLBACK ISSUE-5];
   // 降低边缘阈值：从 0.50 降到 0.45
   // 但如果 landmarkScore=0，说明没有眼镜特征，只根据边缘判断不可靠
-  // 需要提高阈值：landmarkScore > 0 时，frameEdgeScore > 0.45 才判定有眼镜
+  // 需要提高阈值：landmarkScore > 0 时，frameEdgeScore > 0.70 // [ROLLBACK ISSUE-5] 才判定有眼镜
   // landmarkScore=0 时仍需要较高阈值 0.80
   // 重要：如果chinBrightness > 180（咧嘴笑露出牙齿），说明可能是误检，提高阈值到0.90
   const isSmiling = chinBrightness > 180;
-  const edgeThreshold = isSmiling ? 0.90 : 0.45;
+  const edgeThreshold = isSmiling ? 0.90 : 0.65 // [ROLLBACK ISSUE-7];
   console.log('[DetectGlasses] Debug: landmarkScore=', landmarkScore, 'frameEdgeScore=', frameEdgeScore.toFixed(3), 'edgeThreshold=', edgeThreshold, 'chinBrightness=', chinBrightness.toFixed(1), 'lensBrightness=', lensBrightness.toFixed(1));
   const hasGlassesByEdges = (landmarkScore > 0 && frameEdgeScore > edgeThreshold) || (landmarkScore === 0 && frameEdgeScore > 0.80);
   
@@ -658,9 +661,9 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
   const isPossibleSunglasses = lensBrightness < 70 && frameEdgeScore > 0.40 && landmarkScore >= 2;
   
   // [Rollback Point 31] 新增：基于面部特征的眼镜检测
-  // 当 landmarkScore >= 2（面部几何特征明显符合眼镜）且 frameEdgeScore > 0.35 时
+  // 当 landmarkScore >= 2（面部几何特征明显符合眼镜）且 frameEdgeScore > 0.70 // [ROLLBACK ISSUE-5] // [ROLLBACK ISSUE-2] 时
   // 判定为有眼镜，因为面部特征点已经足够可靠，即使边缘检测得分较低
-  const hasGlassesByFacialFeatures = landmarkScore >= 2 && frameEdgeScore > 0.35;
+  const hasGlassesByFacialFeatures = landmarkScore >= 2 && frameEdgeScore > 0.70 // [ROLLBACK ISSUE-5]; // [ROLLBACK ISSUE-2]
   
   // [Rollback Point 33] 新增：当 landmarkScore >= 2 且 frameEdgeScore <= 0.30 且 lensBrightness < 135 时
   // 直接判定为有眼镜，绕过 frameEdgeScore 的限制
@@ -675,10 +678,10 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
   if (hasGlassesByLandmarks || hasGlassesByStrongLandmarks || hasGlassesByEdges || hasGlassesByFacialFeatures || hasGlassesByLandmarkAndLens || isDarkSkinWithDarkGlasses || isPossibleSunglasses) {
     // 有镜框，检测是普通眼镜还是太阳镜
     // 只有当检测到镜框时，才根据镜片亮度判断是否是太阳镜
-    // [Rollback Point 33] 修复：sunglasses 亮度阈值调整为 135
-    // 原问题：阈值 100 太严格，漏检了 lensBrightness=130.9 的真正墨镜
-    // 解决方案：当 lensBrightness < 135 时判定为 sunglasses
-    if (lensBrightness < 135) {
+    // [Rollback Point 50] 修复：sunglasses 亮度阈值调整为 80
+    // 原问题：阈值 135 太宽松，普通眼镜(lensBrightness=97.3)被误判为太阳镜
+    // 解决方案：当 lensBrightness < 80 时判定为 sunglasses（普通眼镜通常 > 100）
+    if (lensBrightness < 80) {
       console.log('[DetectGlasses] Sunglasses detected, lens brightness:', lensBrightness.toFixed(1), 'frameEdgeScore:', frameEdgeScore.toFixed(3));
       return { hasGlasses: true, glassesType: 'sunglasses' };
     }
@@ -1225,10 +1228,31 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
     if (hairRatio < 0.05) return { length: 'bald', confidence: 0.7, shoulderRatio };
     if (hairRatio < 0.15) return { length: 'very_short', confidence: 0.65, shoulderRatio };
     
+    // [ROLLBACK POINT 50] 修复背景误检问题
+    // 问题：shoulderRatio 异常高（如0.834）但实际是黑色衣服被误检为头发
+    // 原因：头发从头顶下垂到肩膀时，太阳穴两侧也应该有头发（templeRatio不会太低）
+    //       如果 templeRatio很低但 shoulderRatio 很高，说明是背景误检而非真正长发
+    // 条件：无胡子 + templeRatio < 0.25（太阳穴几乎没有头发）+ shoulderRatio > 0.6 + hairRatio < 0.35（整体头发较少）
+    // 第六张照片：templeRatio=0.198, shoulderRatio=0.834, hairRatio < 0.35 → 应该判断为 short
+    // 第七张照片：templeRatio=0.117, shoulderRatio=0.968, hairRatio=0.440 > 0.35 → 不会被误判
+    if (!hasBeard && templeRatio < 0.25 && shoulderRatio > 0.6 && hairRatio < 0.35) {
+      console.log(`[HairLength] [ROLLBACK POINT 50] Background false positive detected: templeRatio=${templeRatio.toFixed(3)}, shoulderRatio=${shoulderRatio.toFixed(3)}, hairRatio=${hairRatio.toFixed(3)}, treating as short hair`);
+      return { length: 'short', confidence: 0.7, shoulderRatio };
+    }
+    
     // [ROLLBACK POINT 14] 披肩发检测优化 - 提前检查
     // 问题：hairRatio < 0.30 在 line 1171 返回 short，导致后续 templeRatio 检查无法执行
     // 解决：在返回 short 之前，先检查是否是披肩发（templeRatio >= 0.35 && templeBelowChinRatio >= 0.5）
-    if (!hasBeard && templeRatio >= 0.35 && templeBelowChinRatio >= 0.5) {
+    // [Rollback Point 46 - ISSUE-4] 修复：先检查 hairRatio < 0.30，避免短发被 templeRatio 误判为长发
+    if (hairRatio < 0.30) {
+      return { length: 'short', confidence: 0.75, shoulderRatio };
+    }
+    // [Rollback Point 47 - ISSUE-4] 修复：增加 hairRatio >= 0.60 要求
+    // 原因：templeRatio 和 templeBelowChinRatio 高不一定代表长发，可能只是背景干扰
+    //       只有当 hairRatio >= 0.60 时，才认为有足够的头发面积支持"披肩发"判断
+    // 问题照片：hairRatio=0.562，templeRatio=0.404，templeBelowChinRatio=0.707
+    //           但 shoulderRatio=1.000 表示背景被误检为头发，应该是短发
+    if (!hasBeard && hairRatio >= 0.60 && templeRatio >= 0.35 && templeBelowChinRatio >= 0.5) {  // [ROLLBACK POINT 47 - ISSUE-4]
       console.log(`[HairLength] Rollback Point 14 - Shoulder-length hair detected: templeRatio=${templeRatio.toFixed(3)}, templeBelowChinRatio=${templeBelowChinRatio.toFixed(3)}`);
       return { length: 'long', confidence: 0.65, shoulderRatio };
     }
@@ -1289,7 +1313,7 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
         // [ROLLBACK POINT 14] 披肩发检测：头发垂在肩上挡住耳朵，templeRatio可能不够高
         // 但 templeBelowChinRatio >= 0.5 表示有足够的下垂头发，这是披肩发的特征
         // 降低 templeRatio 阈值从 0.45 到 0.35
-        if (templeRatio >= 0.35 && templeBelowChinRatio >= 0.5) {
+        if (hairRatio >= 0.60 && templeRatio >= 0.35 && templeBelowChinRatio >= 0.5) {
           // templeRatio中等且有足够下垂头发
           return { length: 'long', confidence: 0.65, shoulderRatio };
         }

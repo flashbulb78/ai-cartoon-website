@@ -105,7 +105,7 @@ function classifySkinTone(r: number, g: number, b: number): 'light' | 'medium' |
   // - dark: l <= 45 (非洲人、深肤色)
   // 注：调整阈值以更好区分浅黑肤色(咖啡色皮肤)和白人
   const lightThreshold = 65;
-  const darkThreshold = 45;
+  const darkThreshold = 37; // [ROLLBACK ISSUE-6]
   
   if (s > 50) {
     if (l > lightThreshold) return 'light';
@@ -145,7 +145,10 @@ function classifyHairColor(r: number, g: number, b: number): 'black' | 'brown' |
   
   // 1. 黑色检测：极低亮度 + 低饱和度
   // 也包括深黑色（低亮度中等饱和度）
-  if ((l < 15 && s < 20) || (l < 40 && s < 35 && h < 50)) {
+  // [ROLLBACK Point 49] 修复：排除中等亮度(l=30-50)的姜黄色/棕色被误判为黑色
+  // RGB(130,100,70) 的 HSL 是 h=30, s=30, l=39，这是姜黄色/深棕色，不是黑色
+  // 原条件 l < 40 太宽，会把姜黄色误判为黑色
+  if ((l < 15 && s < 20) || (l < 30 && s < 35 && h < 50)) {  // [ROLLBACK POINT 49]
     console.log(`[HairColor] -> black (l=${l.toFixed(1)}, s=${s.toFixed(1)})`);
     return 'black';
   }
@@ -1042,10 +1045,11 @@ function getLightestSkinColor(
                              chinBrightness > 150 && 
                              avgBrightness < 145 && 
                              darkPixelRatio > 0.05;
-  const useAvgForDark = (lightest.brightness > avgBrightness * 1.1 && avgBrightness < 100) || 
-                        (avgBrightness < 100) || 
-                        (darkPixelRatio > 0.30 && brightnessVariance < 500) ||  // 高方差=patchy(老年斑), 低方差=均匀深肤色 
-                        (chinBrightness < 80 && avgBrightness < 100) ||
+  // [ROLLBACK ISSUE-4] avgBrightness < 100 太宽泛，只有真正暗的肤色(<85)才触发
+  const useAvgForDark = (lightest.brightness > avgBrightness * 1.1 && avgBrightness < 85) || 
+                        (avgBrightness < 85) || 
+                        (darkPixelRatio > 0.40 && brightnessVariance < 500) ||  // [ROLLBACK ISSUE-1] 高方差=patchy(老年斑), 低方差=均匀深肤色 
+                        (chinBrightness < 80 && avgBrightness < 85) ||
                         (foreheadTooDark && chinBrightness < 100) ||
                         noseHasReflection ||
                         noseOnlyReflection ||

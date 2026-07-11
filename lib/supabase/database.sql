@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     username TEXT UNIQUE,
     full_name TEXT,
     avatar_url TEXT,
-    credits INTEGER DEFAULT 5 NOT NULL,  -- 默认5次免费生成次数
+    credits INTEGER DEFAULT 2 NOT NULL,  -- 默认4次免费生成次数
     is_premium BOOLEAN DEFAULT FALSE,
     stripe_customer_id TEXT,
     stripe_subscription_id TEXT,
@@ -62,7 +62,7 @@ CREATE POLICY "Users can delete own generations" ON public.generations
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
-    initial_credits INTEGER := 5;  -- 默认5次免费生成
+    initial_credits INTEGER := 2;  -- 默认4次免费生成
 BEGIN
     -- 尝试从app_settings获取初始点数配置
     BEGIN
@@ -71,10 +71,10 @@ BEGIN
         WHERE key = 'initial_credits';
         
         IF initial_credits IS NULL THEN
-            initial_credits := 5;  -- 默认5次
+            initial_credits := 2;  -- 默认4次
         END IF;
     EXCEPTION WHEN OTHERS THEN
-        initial_credits := 5;  -- 出错时使用默认值
+        initial_credits := 2;  -- 出错时使用默认值
     END;
     
     INSERT INTO public.profiles (id, email, username, full_name, avatar_url, credits)
@@ -226,7 +226,7 @@ CREATE POLICY "Service role can manage transactions" ON public.transactions
 INSERT INTO public.app_settings (key, value)
 VALUES
     ('credits_per_generation', '1'::jsonb),
-    ('initial_credits', '{"credits": 5}'::jsonb)
+    ('initial_credits', '{"credits": 2}'::jsonb)
 ON CONFLICT (key) DO NOTHING;
 
 -- =====================================================

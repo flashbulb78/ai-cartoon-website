@@ -259,10 +259,12 @@ export function detectBeardLocal(
     return { hasBeard: false, beardLength: 'none', beardShape: 'unknown', beardColor: 'unknown' };
   }
   // 增加上限检查：如果textureRatio过高(>4.0)但darkPixelRatio低(<8%)，不触发（可能是头发texture）
-  // [Rollback Point 38] 修复：当darkPixelRatio > 0.80时，必须同时有纹理(chinTextureRatio > 0.05)
-  // 否则可能是阴影导致的误检（如下巴阴影），而不是真正的胡须
+  // [Rollback Point 38] 修复：当darkPixelRatio > 0.80时，必须同时有足够纹理
+  // [Rollback Point 42 - ISSUE-4] 修复：提高 chinTextureRatio 阈值从 0.05 到 0.20
+  // 原因：0.05 太低，导致下巴阴影被误检为胡子
+  // 问题照片：无胡子白人男性，下巴阴影被误检为 long beard，导致 gender=female
   const hasBeardByDarkness = brightnessRatio < 0.75 && darkPixelRatio > darkPixelThreshold && 
-                             (textureRatio > 1.80 && textureRatio < 4.50 || (darkPixelRatio > 0.80 && chinTextureRatio > 0.05));
+                             (textureRatio > 1.80 || darkPixelRatio > 0.80 && chinTextureRatio > 0.20); // [ROLLBACK ISSUE-3] [ROLLBACK POINT 42 - ISSUE-4]
   // 纹理检测：当textureRatio和chinTextureRatio都很高时，即使darkPixelRatio很低也认为有胡须
   // 优化：降低textureRatio要求以适应络腮胡情况
   // 添加亮度要求：只有下巴比额头暗时（brightnessRatio < 0.80）才根据textureRatio判断有胡子
@@ -308,7 +310,11 @@ export function detectBeardLocal(
   // 胡须检测：需要暗像素占比高且颜色均匀
   // 女性头发阴影：暗像素占比低或颜色不均匀
   // 男性胡须：暗像素占比高且颜色均匀
-  const hasBeardByColorUniformity = darkPixelUniformity > 0.5 && avgColorDeviation < 25 && darkPixelRatio > 0.08;
+  // [Rollback Point 44 - ISSUE-4] 修复：增加 brightnessRatio < 1.0 约束
+  // 原因：真正的胡子会让下巴比额头暗(brightnessRatio < 1)，如果下巴比额头还亮(ratio > 1)
+  //       说明是下巴本身肤色暗，不是胡子导致的
+  // 问题照片：brightnessRatio=2.12（下巴比额头亮），但仍被 hasBeardByColorUniformity 误判为有胡子
+  const hasBeardByColorUniformity = darkPixelUniformity > 0.5 && avgColorDeviation < 25 && darkPixelRatio > 0.08 && brightnessRatio < 1.0;  // [ROLLBACK POINT 44 - ISSUE-4]
   
   console.log(`[BeardDetect] Color uniformity: darkPixelUniformity=${(darkPixelUniformity * 100).toFixed(1)}%, avgColorDeviation=${avgColorDeviation.toFixed(1)}`);
   
