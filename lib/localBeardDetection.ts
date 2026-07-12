@@ -344,9 +344,39 @@ export function detectBeardLocal(
   
   // 使用 OR 组合：满足任一条件即认为有胡须
   const hasBeard = hasBeardByDarkness || hasBeardByTexture || hasBeardByAbsoluteTexture || hasBeardByColorUniformity || hasBeardByLightColor;
-  
+
   if (!hasBeard) {
     return { hasBeard: false, beardLength: 'none', beardShape: 'unknown', beardColor: 'unknown' };
+  }
+
+  // ========== 最终颜色校验：排除衣服/阴影误判 ==========
+  // 真正的胡子颜色应该是暖色调（黑/棕/红/金/灰）而非冷色调（蓝/青/绿）
+  // 下巴区域的暗像素如果是蓝色调（B > R 且 B 明显高于 R），说明是衣服不是胡子
+  {
+    let totalR = 0, totalG = 0, totalB = 0, colorCheckCount = 0;
+    for (let y = Math.floor(chinCenterY); y < Math.floor(chinCenterY + 25); y += 2) {
+      for (let x = Math.floor(chinCenterX - 30); x < Math.floor(chinCenterX + 30); x += 2) {
+        if (x >= 0 && x < width && y >= 0 && y < height) {
+          const idx = (y * width + x) * 4;
+          const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+          const brightness = (r + g + b) / 3;
+          // 只分析暗像素（胡须/头发通常是暗的）
+          if (brightness < 120) {
+            totalR += r; totalG += g; totalB += b; colorCheckCount++;
+          }
+        }
+      }
+    }
+    if (colorCheckCount > 20) {
+      const avgR = totalR / colorCheckCount;
+      const avgB = totalB / colorCheckCount;
+      // 如果蓝色通道明显高于红色通道（B > R * 1.3），说明采样到了蓝色系衣物而非胡子
+      if (avgB > avgR * 1.3) {
+        console.log(`[BeardDetect] Color check failed: avgRGB=(${avgR.toFixed(0)},${(totalG/colorCheckCount).toFixed(0)},${avgB.toFixed(0)}), blue dominant, treating as clothing, not beard`);
+        return { hasBeard: false, beardLength: 'none', beardShape: 'unknown', beardColor: 'unknown' };
+      }
+      console.log(`[BeardDetect] Color check passed: avgRGB=(${avgR.toFixed(0)},${(totalG/colorCheckCount).toFixed(0)},${avgB.toFixed(0)}), warm/brown tones`);
+    }
   }
   
   // 判断胡须长度（基于暗像素比例 + 纹理比例综合判断）

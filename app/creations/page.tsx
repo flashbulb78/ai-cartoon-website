@@ -40,19 +40,14 @@ export default function CreationsPage() {
 
     setIsLoading(true);
     try {
-      const { count } = await supabase
-        .from('generations')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id);
-
-      setTotalCount(count || 0);
-
       const from = (page - 1) * ITEMS_PER_PAGE;
       const to = from + ITEMS_PER_PAGE - 1;
 
-      const { data, error } = await supabase
+      // 合并查询：一次请求同时返回数据和总数，减少一次数据库往返
+      // 使用 estimated 计数代替 exact，在大数据量下快很多
+      const { data, error, count } = await supabase
         .from('generations')
-        .select('*')
+        .select('*', { count: 'estimated' })
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .range(from, to);
@@ -61,6 +56,7 @@ export default function CreationsPage() {
         console.error('Error fetching history:', error);
       } else {
         setHistory(data || []);
+        setTotalCount(count || 0);
       }
     } catch (error) {
       console.error('Error fetching history:', error);

@@ -108,7 +108,7 @@ export default function HomePage() {
         
         // 如果人脸检测失败，提示用户更换照片
         if (!analysis.faceDetected) {
-          setError('Face detection failed. The photo recognition rate may be low. Please try a clearer photo with a visible face.');
+          setError("We couldn't detect a face in this photo. Please try uploading a clearer image where your face is well-lit and directly visible — this helps us create the best cartoon avatar for you!");
           setSelectedImage(null);
           setFaceAnalysis(null);
           return;
