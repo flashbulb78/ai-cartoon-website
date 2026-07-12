@@ -191,14 +191,14 @@ export default function AdminLogsPage() {
     // loadLogs is a stable callback that manages its own state transitions
   }, [user, pagination.page, loadLogs]);
   
-  // 筛选变化时重新加载
+  // 筛选变化时重新加载（只依赖筛选条件）
   useEffect(() => {
-    if (user && !isLoading) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (user) {
       loadLogs(1);
     }
-    // loadLogs is a stable callback that manages its own state transitions
-  }, [user, isLoading, startTime, endTime, ipKeyword, loginTypeFilter, loadLogs]);
+    // 不在依赖中包含 isLoading，避免 loadLogs 完成后触发循环
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, startTime, endTime, ipKeyword, loginTypeFilter]);
   
   if (authLoading || !user) {
     return (

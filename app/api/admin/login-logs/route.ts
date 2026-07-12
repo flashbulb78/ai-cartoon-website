@@ -7,22 +7,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { getClientIp } from '@/lib/ip-parse';
-import { SupabaseClient } from '@supabase/supabase-js';
-
-/**
- * 检查用户是否为管理员
- */
-async function isAdmin(supabase: SupabaseClient, userId: string): Promise<boolean> {
-  // 使用 service role client 来检查管理员权限
-  const { data, error } = await supabase
-    .from('admins')
-    .select('user_id')
-    .eq('user_id', userId)
-    .single();
-  
-  return !error && !!data;
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -38,9 +22,14 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    // 2. 检查管理员权限
-    const isUserAdmin = await isAdmin(supabase, user.id);
-    if (!isUserAdmin) {
+    // 2. 检查管理员权限（复用 supabase 客户端）
+    const { data: adminData } = await supabase
+      .from('admins')
+      .select('user_id')
+      .eq('user_id', user.id)
+      .single();
+    
+    if (!adminData) {
       return NextResponse.json(
         { success: false, error: 'Forbidden - Admin access required' },
         { status: 403 }
@@ -57,10 +46,10 @@ export async function GET(request: NextRequest) {
     const ipKeyword = searchParams.get('ip');
     const loginType = searchParams.get('loginType');
     
-    // 4. 构建查询
+    // 4. 构建查询（先查日志再查邮箱，但用count:estimated避免全表扫描）
     let query = supabase
       .from('user_login_logs')
-      .select('*', { count: 'exact' });
+      .select('*', { count: 'estimated' });
     
     // 时间范围筛选
     if (startTime) {

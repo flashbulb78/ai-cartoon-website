@@ -635,7 +635,11 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
   // 解决方案：
   // - hasGlassesByStrongLandmarks 的 frameEdgeScore 从 0.50 降到 0.45
   // - 新增专用 sunglasses 检测条件：lensBrightness < 100 且 frameEdgeScore > 0.40
-  const hasGlassesByStrongLandmarks = landmarkScore >= 2 && frameEdgeScore > 0.70 // [ROLLBACK ISSUE-5];
+  // [ROLLBACK ISSUE-5] [ISSUE-10] 修复：landmarkScore>=2 且 frameEdgeScore>0.70 时容易误判
+  // 当 lensBrightness < 80（深色瞳仁/浓眉导致眼睛区域偏暗），frameEdgeScore 需要 > 0.85
+  // 才能确认是镜框而非眉毛/眼窝阴影。只有当 lensBrightness >= 80 时才用 0.70 阈值。
+  const glassesEdgeThreshold = lensBrightness < 80 ? 0.85 : 0.70;
+  const hasGlassesByStrongLandmarks = landmarkScore >= 2 && frameEdgeScore > glassesEdgeThreshold;
   // 降低边缘阈值：从 0.50 降到 0.45
   // 但如果 landmarkScore=0，说明没有眼镜特征，只根据边缘判断不可靠
   // 需要提高阈值：landmarkScore > 0 时，frameEdgeScore > 0.70 // [ROLLBACK ISSUE-5] 才判定有眼镜
