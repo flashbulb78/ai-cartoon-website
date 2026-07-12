@@ -314,7 +314,11 @@ export function detectBeardLocal(
   // 原因：真正的胡子会让下巴比额头暗(brightnessRatio < 1)，如果下巴比额头还亮(ratio > 1)
   //       说明是下巴本身肤色暗，不是胡子导致的
   // 问题照片：brightnessRatio=2.12（下巴比额头亮），但仍被 hasBeardByColorUniformity 误判为有胡子
-  const hasBeardByColorUniformity = darkPixelUniformity > 0.5 && avgColorDeviation < 25 && darkPixelRatio > 0.08 && brightnessRatio < 1.0;  // [ROLLBACK POINT 44 - ISSUE-4]
+  // [ISSUE-11] 修复：深肤色女性被误判为有胡子
+  // 深肤色(dark/medium_dark)的下巴天然暗度高，暗像素多不一定是胡子而是肤色
+  // 只在浅肤色(light/medium/medium_light)时启用颜色均匀度胡须检测
+  const hasBeardByColorUniformity = (skinTone !== 'dark' && skinTone !== 'medium_dark')
+    && darkPixelUniformity > 0.5 && avgColorDeviation < 25 && darkPixelRatio > 0.08 && brightnessRatio < 1.0;  // [ROLLBACK POINT 44 - ISSUE-4]
   
   console.log(`[BeardDetect] Color uniformity: darkPixelUniformity=${(darkPixelUniformity * 100).toFixed(1)}%, avgColorDeviation=${avgColorDeviation.toFixed(1)}`);
   

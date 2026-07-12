@@ -465,6 +465,7 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
   
   // ========== 方法2：图像边缘检测 ==========
   let frameEdgeScore = 0;
+  let bridgeEdgeCount = 0;  // 在if外部声明，供后续逻辑使用
   if (imageData) {
     const { data, width, height } = imageData;
     
@@ -479,10 +480,10 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
     // 在眼睛上方 10-30px 区域检测镜框上沿
     const eyeTopY = Math.min(leftEyeCenterY, rightEyeCenterY);
     
-    // 检测镜框存在的三个指标
+    // 检测镜框存在的三个指标（bridgeEdgeCount在外部已声明）
     let horizontalEdgeCount = 0;
     let frameWidthCount = 0;
-    let bridgeEdgeCount = 0;
+    bridgeEdgeCount = 0;
     
     // 2.1 扫描眼睛上方 10-30px 区域（镜框上沿）
     for (let y = eyeTopY - 30; y < eyeTopY - 5; y += 2) {
@@ -637,8 +638,11 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
   // - 新增专用 sunglasses 检测条件：lensBrightness < 100 且 frameEdgeScore > 0.40
   // [ROLLBACK ISSUE-5] [ISSUE-10] 修复：landmarkScore>=2 且 frameEdgeScore>0.70 时容易误判
   // 当 lensBrightness < 80（深色瞳仁/浓眉导致眼睛区域偏暗），frameEdgeScore 需要 > 0.85
-  // 才能确认是镜框而非眉毛/眼窝阴影。只有当 lensBrightness >= 80 时才用 0.70 阈值。
-  const glassesEdgeThreshold = lensBrightness < 80 ? 0.85 : 0.70;
+  // 才能确认是镜框而非眉毛/眼窝阴影。
+  // [ISSUE-11] 修复：bridgeEdgeCount > 20（鼻梁区域有明显镜架边缘）是真眼镜的特征
+  // 此时不应用高阈值，因为深色皮肤+深色镜框的 frameEdgeScore 天然偏低
+  const hasBridgeFrame = bridgeEdgeCount > 20;
+  const glassesEdgeThreshold = (lensBrightness < 80 && !hasBridgeFrame) ? 0.85 : 0.70;
   const hasGlassesByStrongLandmarks = landmarkScore >= 2 && frameEdgeScore > glassesEdgeThreshold;
   // 降低边缘阈值：从 0.50 降到 0.45
   // 但如果 landmarkScore=0，说明没有眼镜特征，只根据边缘判断不可靠
@@ -683,7 +687,11 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
   // 仅当 lensBrightness < 60 且 landmarkScore >= 3 时才判定
   const hasGlassesByLandmarkAndLens = landmarkScore >= 3 && frameEdgeScore <= 0.20 && lensBrightness < 60;
   
-  if (hasGlassesByLandmarks || hasGlassesByStrongLandmarks || hasGlassesByEdges || hasGlassesByFacialFeatures || hasGlassesByLandmarkAndLens || isDarkSkinWithDarkGlasses || isPossibleSunglasses) {
+  // [ISSUE-11] 新增：深色皮肤+深色镜框 + 鼻梁镜架边缘强烈(bridgeEdgeCount>20) 时判定为有眼镜
+  // frameEdgeScore 低是因为深色镜框和深色皮肤对比度低，但鼻梁镜架边缘(bridgeEdgeCount)仍然清晰
+  const hasGlassesByBridgeFrame = landmarkScore >= 2 && bridgeEdgeCount > 20 && lensBrightness < 80 && frameEdgeScore > 0.30;
+  
+  if (hasGlassesByLandmarks || hasGlassesByStrongLandmarks || hasGlassesByEdges || hasGlassesByFacialFeatures || hasGlassesByLandmarkAndLens || isDarkSkinWithDarkGlasses || isPossibleSunglasses || hasGlassesByBridgeFrame) {
     // 有镜框，检测是普通眼镜还是太阳镜
     // 只有当检测到镜框时，才根据镜片亮度判断是否是太阳镜
     // [Rollback Point 50] 修复：sunglasses 亮度阈值调整为 80
