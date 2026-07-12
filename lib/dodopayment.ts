@@ -8,9 +8,9 @@
 import crypto from 'crypto';
 
 // 环境配置
-const DODOPAYMENT_BASE_URL = process.env.DODO_PAYMENTS_ENVIRONMENT === 'live_mode'
-  ? 'https://live.dodopayments.com'
-  : 'https://test.dodopayments.com';
+// 生产环境 - 固定使用 live.dodopayments.com
+// test 环境已下线，不再使用
+const DODOPAYMENT_BASE_URL = 'https://live.dodopayments.com';
 
 const DODOPAYMENT_API_KEY = process.env.DODO_PAYMENTS_API_KEY!;
 const DODOPAYMENT_WEBHOOK_KEY = process.env.DODO_PAYMENTS_WEBHOOK_KEY!;
