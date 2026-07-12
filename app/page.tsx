@@ -25,6 +25,7 @@ import { Header } from '@/components/Header';
 import { ImageUploader } from '@/components/ImageUploader';
 import { StyleSelector } from '@/components/StyleSelector';
 import { ResultViewer } from '@/components/ResultViewer';
+import { SocialAvatarDownload } from '@/components/SocialAvatarDownload';
 import { GenerationParameters } from '@/components/GenerationParameters';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
@@ -513,6 +514,8 @@ export default function HomePage() {
               onDownload={handleDownload}
               onRegenerate={generatedImage && !isGenerating ? handleRegenerate : undefined}
             />
+            {/* Social Media Download Options */}
+            <SocialAvatarDownload imageUrl={generatedImage} baseFilename="magicyoyoyo-avatar" />
           </div>
         </div>
 

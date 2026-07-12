@@ -1807,7 +1807,13 @@ export function generateFullPrompt(
       const beardLengthDesc = (result.ethnicity === 'black' && acc.beardLength === 'short') 
         ? 'CRITICAL: Minimal stubble (only a few millimeters, very short facial hair)' 
         : `${acc.beardLength} beard`;
-      parts.push(`CRITICAL CONSTRAINT: The person has a ${beardLengthDesc} (${beardColorDesc} color). You MUST preserve the beard and its color in the final image. DO NOT remove, omit, or stylize away the beard. Beard length must match the original photo.`);
+      
+      // 如果用户强制指定女性，移除胡须；否则保留胡须
+      if (genderForce === 'female') {
+        parts.push(`CRITICAL CONSTRAINT: The person currently has a ${beardLengthDesc} (${beardColorDesc} color), but since the target style is female, you MUST completely remove/eliminate the beard. The face should be smooth and feminine without any facial hair.`);
+      } else {
+        parts.push(`CRITICAL CONSTRAINT: The person has a ${beardLengthDesc} (${beardColorDesc} color). You MUST preserve the beard and its color in the final image. DO NOT remove, omit, or stylize away the beard. Beard length must match the original photo.`);
+      }
     }
     if (acc.hasHat) {
       parts.push(`Wearing hat${acc.hatColor ? ` (${acc.hatColor})` : ''}.`);
