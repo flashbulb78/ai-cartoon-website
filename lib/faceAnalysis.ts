@@ -641,24 +641,32 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
   // 需要提高阈值：landmarkScore > 0 时，frameEdgeScore > 0.70 // [ROLLBACK ISSUE-5] 才判定有眼镜
   // landmarkScore=0 时仍需要较高阈值 0.80
   // 重要：如果chinBrightness > 180（咧嘴笑露出牙齿），说明可能是误检，提高阈值到0.90
+  // isSmiling 检测：如果下巴亮度 > 180 认为在微笑，提高边缘检测阈值
+  // [ISSUE-9] 修复：0.90 阈值太高，戴眼镜微笑的人也通不过检测
+  // 改为 0.70，既防止阴影误检又不漏检戴眼镜的微笑人脸
+  // [ISSUE-9] 修复：戴眼镜微笑的人 frameEdgeScore 会降低但 landmarkScore 可靠
+  // 当 landmarkScore >= 2 时，面部几何特征已足够确认眼镜，降低 frameEdgeScore 要求
   const isSmiling = chinBrightness > 180;
-  const edgeThreshold = isSmiling ? 0.90 : 0.65 // [ROLLBACK ISSUE-7];
-  console.log('[DetectGlasses] Debug: landmarkScore=', landmarkScore, 'frameEdgeScore=', frameEdgeScore.toFixed(3), 'edgeThreshold=', edgeThreshold, 'chinBrightness=', chinBrightness.toFixed(1), 'lensBrightness=', lensBrightness.toFixed(1));
-  const hasGlassesByEdges = (landmarkScore > 0 && frameEdgeScore > edgeThreshold) || (landmarkScore === 0 && frameEdgeScore > 0.80);
+  console.log('[DetectGlasses] Debug: landmarkScore=', landmarkScore, 'frameEdgeScore=', frameEdgeScore.toFixed(3), 'chinBrightness=', chinBrightness.toFixed(1), 'lensBrightness=', lensBrightness.toFixed(1));
+  // 根据 landmarkScore 调整边缘检测阈值：landmarkScore 越高，对 frameEdgeScore 的要求越低
+  const effectiveEdgeThreshold = isSmiling
+    ? (landmarkScore >= 2 ? 0.50 : 0.90)  // landmark>=2时微笑惩罚降低
+    : (landmarkScore >= 2 ? 0.55 : 0.65); // landmark>=2时不微笑也降低
+  const hasGlassesByEdges = (landmarkScore > 0 && frameEdgeScore > effectiveEdgeThreshold) || (landmarkScore === 0 && frameEdgeScore > 0.80);
   
   // 深色皮肤+深色镜框的特殊情况：
   // 如果镜片非常暗(<55)且下巴不亮(非微笑露齿)，即使frameEdgeScore较低也可能是深色镜框
   // 这是因为深色镜框和深色皮肤对比度低，导致边缘检测得分低
   // [Rollback Point 18] 修复：降低阈值从65到55，避免深色皮肤误检测为眼镜
-  const isDarkSkinWithDarkGlasses = !isSmiling && lensBrightness < 55 && landmarkScore > 0 && frameEdgeScore > 0.20;
+  // [ISSUE-8] 修复：提高 lensBrightness 阈值从 55→35，防止浓眉/深眼窝的白人男性被误判
+  // 同时 landmarkScore 需要 >= 2（面部几何特征匹配），frameEdgeScore > 0.30
+  const isDarkSkinWithDarkGlasses = !isSmiling && lensBrightness < 35 && landmarkScore >= 2 && frameEdgeScore > 0.30;
   console.log('[DetectGlasses] Dark skin with dark glasses fallback:', isDarkSkinWithDarkGlasses);
   
   // [Rollback Point 30] 新增：sunglasses 专用检测条件
-  // 当 lensBrightness < 100（非常暗）且 frameEdgeScore > 0.40 时，直接判定为 sunglasses
-  // 这可以捕获深色镜片导致的低边缘得分情况
-  // [Rollback Point 36] 修复：提高阈值，避免误检
-  // lensBrightness 在 70-100 范围时可能是边界情况，只有当 lensBrightness < 70 时才判定为 sunglasses
-  const isPossibleSunglasses = lensBrightness < 70 && frameEdgeScore > 0.40 && landmarkScore >= 2;
+  // [ISSUE-8] 修复：提高 lensBrightness 阈值从 70→40，frameEdgeScore 从 0.40→0.50
+  // 浓眉/深眼窝也会导致低亮度，需要更严格的边缘特征来确认是墨镜
+  const isPossibleSunglasses = lensBrightness < 40 && frameEdgeScore > 0.50 && landmarkScore >= 2;
   
   // [Rollback Point 31] 新增：基于面部特征的眼镜检测
   // 当 landmarkScore >= 2（面部几何特征明显符合眼镜）且 frameEdgeScore > 0.70 // [ROLLBACK ISSUE-5] // [ROLLBACK ISSUE-2] 时
@@ -667,21 +675,17 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
   
   // [Rollback Point 33] 新增：当 landmarkScore >= 2 且 frameEdgeScore <= 0.30 且 lensBrightness < 135 时
   // 直接判定为有眼镜，绕过 frameEdgeScore 的限制
-  // 条件 frameEdgeScore <= 0.30 用于区分无眼镜和墨镜情况：
-  // - 无眼镜 case: frameEdgeScore=0.486 > 0.30，不触发此条件
-  // - 墨镜 case: frameEdgeScore=0.217 <= 0.30，触发此条件
-  // 条件 lensBrightness < 135 确保是墨镜而非普通眼镜
-  // [Rollback Point 37] 修复：降低阈值从 0.30 到 0.20，避免误检
-  // 当前案例 frameEdgeScore=0.234 被误检，需要更严格的条件
-  const hasGlassesByLandmarkAndLens = landmarkScore >= 2 && frameEdgeScore <= 0.20 && lensBrightness < 135;
+  // [ISSUE-8] 修复：lensBrightness < 135 太宽松，浓眉/深眼窝也容易触发
+  // 仅当 lensBrightness < 60 且 landmarkScore >= 3 时才判定
+  const hasGlassesByLandmarkAndLens = landmarkScore >= 3 && frameEdgeScore <= 0.20 && lensBrightness < 60;
   
   if (hasGlassesByLandmarks || hasGlassesByStrongLandmarks || hasGlassesByEdges || hasGlassesByFacialFeatures || hasGlassesByLandmarkAndLens || isDarkSkinWithDarkGlasses || isPossibleSunglasses) {
     // 有镜框，检测是普通眼镜还是太阳镜
     // 只有当检测到镜框时，才根据镜片亮度判断是否是太阳镜
     // [Rollback Point 50] 修复：sunglasses 亮度阈值调整为 80
-    // 原问题：阈值 135 太宽松，普通眼镜(lensBrightness=97.3)被误判为太阳镜
-    // 解决方案：当 lensBrightness < 80 时判定为 sunglasses（普通眼镜通常 > 100）
-    if (lensBrightness < 80) {
+    // [ISSUE-8] 修复：lensBrightness < 80 太宽松，浓眉/深眼窝也会导致低亮度
+    // 提高阈值到 lensBrightness < 40 才判定为 sunglasses
+    if (lensBrightness < 40) {
       console.log('[DetectGlasses] Sunglasses detected, lens brightness:', lensBrightness.toFixed(1), 'frameEdgeScore:', frameEdgeScore.toFixed(3));
       return { hasGlasses: true, glassesType: 'sunglasses' };
     }
