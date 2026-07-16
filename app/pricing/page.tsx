@@ -73,7 +73,8 @@ export default function PricingPage() {
 
     setIsPurchasing(packageId);
     try {
-      const response = await fetch('/api/dodo/create-checkout', {
+      // 注意：必须加尾部斜杠，否则 Vercel 会 308 重定向导致请求体丢失
+      const response = await fetch('/api/dodo/create-checkout/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ product_id: packageId }),
