@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { ClarityProvider } from "@/components/ClarityProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -29,7 +30,9 @@ export default function RootLayout({
         {/* Theme provider - initializes theme from localStorage on every page load */}
         <ThemeProvider>
           {/* 全局认证Provider */}
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            <ClarityProvider>{children}</ClarityProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>
