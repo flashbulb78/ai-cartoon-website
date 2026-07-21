@@ -141,6 +141,7 @@ function classifySkinTone(r: number, g: number, b: number): 'light' | 'medium' |
 function classifyHairColor(r: number, g: number, b: number): 'black' | 'brown' | 'blonde' | 'red' | 'gray' | 'white' {
   const { h, s, l } = rgbToHsl(r, g, b);
   
+  console.log(`[HairColor classify] RGB(${r}, ${g}, ${b}) -> HSL(h=${h.toFixed(1)}, s=${s.toFixed(1)}, l=${l.toFixed(1)})`);
   
   // 1. 黑色检测：极低亮度 + 低饱和度
   // 也包括深黑色（低亮度中等饱和度）
@@ -148,11 +149,13 @@ function classifyHairColor(r: number, g: number, b: number): 'black' | 'brown' |
   // RGB(130,100,70) 的 HSL 是 h=30, s=30, l=39，这是姜黄色/深棕色，不是黑色
   // 原条件 l < 40 太宽，会把姜黄色误判为黑色
   if ((l < 15 && s < 20) || (l < 30 && s < 35 && h < 50)) {  // [ROLLBACK POINT 49]
+    console.log(`[HairColor] -> black (l=${l.toFixed(1)}, s=${s.toFixed(1)})`);
     return 'black';
   }
   
   // 2. 白色检测：极高亮度 + 极低饱和度
   if ((l > 85 && s <= 20) || (l > 80 && s < 15)) {
+    console.log(`[HairColor] -> white (l=${l.toFixed(1)}, s=${s.toFixed(1)})`);
     return 'white';
   }
   
@@ -160,6 +163,7 @@ function classifyHairColor(r: number, g: number, b: number): 'black' | 'brown' |
   // 真正的灰色：饱和度很低(<20)，不管hue是什么
   // 条件：l>60 且 s<25 - 但如果 s<20，即使l不高也是灰色
   if ((l > 60 && s < 25) || (l > 50 && s < 20)) {
+    console.log(`[HairColor] -> gray (l=${l.toFixed(1)}, s=${s.toFixed(1)})`);
     return 'gray';
   }
   
@@ -167,11 +171,13 @@ function classifyHairColor(r: number, g: number, b: number): 'black' | 'brown' |
   // 灰发的过曝高光：l极高(>85)且s很低(<25)，这才可能是灰色头发反射的光
   // 不应该是暖色hue+中等饱和度(s=50)的情况
   if (l > 85 && s < 25) {
+    console.log(`[HairColor] -> gray (overexposed highlight) (l=${l.toFixed(1)}, s=${s.toFixed(1)}, h=${h.toFixed(1)})`);
     return 'gray';
   }
   
   // 5. 红色检测：橙红色调 + 高饱和度 + 中等以下亮度
   if (h >= 0 && h <= 40 && s > 40 && l < 60) {
+    console.log(`[HairColor] -> red (h=${h.toFixed(1)}, s=${s.toFixed(1)}, l=${l.toFixed(1)})`);
     return 'red';
   }
   
@@ -179,6 +185,7 @@ function classifyHairColor(r: number, g: number, b: number): 'black' | 'brown' |
   // [ROLLBACK POINT 4] 修复：blonde应该限制在黄/橙色调范围(h=30-70)，而不是所有h>45的颜色
   // 之前条件h>45会把蓝色(h=220)等错误地判定为blonde
   if (h >= 30 && h <= 70 && s >= 25 && l > 50) {
+    console.log(`[HairColor] -> blonde (h=${h.toFixed(1)}, s=${s.toFixed(1)}, l=${l.toFixed(1)})`);
     return 'blonde';
   }
   
@@ -187,27 +194,33 @@ function classifyHairColor(r: number, g: number, b: number): 'black' | 'brown' |
   if (h >= 15 && h <= 45 && s >= 30) {
     // 高亮度棕色检测时需要特殊处理：如果亮度>80且饱和度<30，很可能是灰色头发的高光
     if (l > 80 && s < 30) {
+      console.log(`[HairColor] -> gray (high light brown with highlight) (l=${l.toFixed(1)}, s=${s.toFixed(1)}, h=${h.toFixed(1)})`);
       return 'gray';
     }
+    console.log(`[HairColor] -> brown (h=${h.toFixed(1)}, s=${s.toFixed(1)}, l=${l.toFixed(1)})`);
     return 'brown';
   }
   
   // 8. 深棕色检测：低亮度但有色彩
   if (l < 25 && s >= 15) {
+    console.log(`[HairColor] -> brown (dark) (l=${l.toFixed(1)}, s=${s.toFixed(1)})`);
     return 'brown';
   }
   
   // 9. 中等亮度灰色调棕色
   if (l > 50 && s >= 15 && s < 30) {
+    console.log(`[HairColor] -> brown (grayish) (l=${l.toFixed(1)}, s=${s.toFixed(1)})`);
     return 'brown';
   }
   
   // 10. 灰色兜底
   if (l > 60 && s <= 30) {
+    console.log(`[HairColor] -> gray (fallback) (l=${l.toFixed(1)}, s=${s.toFixed(1)})`);
     return 'gray';
   }
   
   // 11. 默认棕色（暖色系但不符合上面条件的）
+  console.log(`[HairColor] -> brown (DEFAULT) (h=${h.toFixed(1)}, s=${s.toFixed(1)}, l=${l.toFixed(1)})`);
   return 'brown';
 }
 
@@ -335,6 +348,7 @@ function getDominantColor(pixels: Uint8ClampedArray, region: { x: number; y: num
   
   // [ROLLBACK POINT 12] 输出头发区域采样诊断信息
   if (excludeSkinColor && totalSampled > 0) {
+    console.log('[ColorDetection] Hair region brightness distribution: dark=' + brightnessBuckets.dark + '(' + (brightnessBuckets.dark / totalSampled * 100).toFixed(1) + '%), medium=' + brightnessBuckets.medium + '(' + (brightnessBuckets.medium / totalSampled * 100).toFixed(1) + '%), light=' + brightnessBuckets.light + '(' + (brightnessBuckets.light / totalSampled * 100).toFixed(1) + '%), bright=' + brightnessBuckets.bright + '(' + (brightnessBuckets.bright / totalSampled * 100).toFixed(1) + '%), total=' + totalSampled);
   }
   
   // 找到出现最多的颜色
@@ -433,6 +447,7 @@ export function detectColorAttributes(
             skinColor = { r: multiRegionResult.r, g: multiRegionResult.g, b: multiRegionResult.b };
             darkPixelRatio = multiRegionResult.darkPixelRatio || 0;
             needsDarkSkinAdjustment = multiRegionResult.needsDarkSkinAdjustment || false;
+            console.log('[ColorDetection] Using multi-region skin detection, selected region with lightness:', multiRegionResult.brightness.toFixed(1));
           }
         }
         
@@ -471,9 +486,11 @@ export function detectColorAttributes(
         if (hairColorResult) {
           const { h, s, l } = rgbToHsl(hairColorResult.r, hairColorResult.g, hairColorResult.b);
           if (l > 70 && s < 20) {
+            console.log(`[ColorDetection] Hair color too light (l=${l.toFixed(1)}, s=${s.toFixed(1)}), trying darker pixels`);
             // 尝试从头发区域获取一个更暗的颜色作为回退
             const darkHairColor = getDarkestNonSkinColor(pixels, hairRegion, w);
             if (darkHairColor) {
+              console.log(`[ColorDetection] Found darker hair color: RGB(${darkHairColor.r}, ${darkHairColor.g}, ${darkHairColor.b})`);
               return darkHairColor;
             }
           }
@@ -501,6 +518,7 @@ export function detectColorAttributes(
           const adjustedR = Math.max(30, Math.round(skinColor.r * scaleFactor));
           const adjustedG = Math.max(20, Math.round(skinColor.g * scaleFactor));
           const adjustedB = Math.max(15, Math.round(skinColor.b * scaleFactor));
+          console.log('[ColorDetection] Dark skin detected (needsAdjustment=true, darkPixelRatio=' + (darkPixelRatio * 100).toFixed(1) + '%), adjusting skin color:', skinColor, '->', { r: adjustedR, g: adjustedG, b: adjustedB });
           skinColor = { r: adjustedR, g: adjustedG, b: adjustedB };
         }
         
@@ -516,11 +534,15 @@ export function detectColorAttributes(
         const hairLightness = hairColorResult ? rgbToHsl(hairColorResult.r, hairColorResult.g, hairColorResult.b).l : 50;
         const correctedHairColor = (hairColor === 'red' && hairLightness < 70) ? 'brown' : hairColor;
         if (hairColor === 'red') {
+          console.log(`[ColorDetection] Corrected hairColor from 'red' to 'brown'`);
         }
         
         const eyeColor = eyeColorResult ? classifyEyeColor(eyeColorResult.r, eyeColorResult.g, eyeColorResult.b) : 'unknown';
         const eyeColorHex = eyeColorResult ? rgbToHex(eyeColorResult.r, eyeColorResult.g, eyeColorResult.b) : '#000000';
         
+        console.log('[ColorDetection] Detected:', { skinTone, hairColor, eyeColor });
+        console.log('[ColorDetection] Hex colors:', { skinColorHex, hairColorHex, eyeColorHex });
+        console.log('[ColorDetection] Using landmarks:', !!scaledLandmarks);
         
         resolve({
           skinTone,
@@ -735,9 +757,11 @@ function calculateMultiRegionSkinColor(
     current.brightness > best.brightness ? current : best
   );
   
+  console.log('[ColorDetection] Multi-region skin sampling:', regionResults.map(r => ({
     name: r.name,
     brightness: r.brightness.toFixed(1)
   })));
+  console.log('[ColorDetection] Selected region:', bestRegion.name, 'with brightness:', bestRegion.brightness.toFixed(1));
   
   return {
     r: bestRegion.r,
@@ -779,6 +803,7 @@ function getLightestSkinColor(
   // 如果采样下限低于foreheadTopY，说明采样会包含发际线以下区域（包括下垂的头发），需要上移
   const foreheadCenterYAdjusted = samplingBottomY < foreheadTopY ? foreheadTopY + regionSize / 2 : foreheadCenterYRaw;
   const foreheadCenterY = Math.max(regionSize / 2, Math.min(h - regionSize / 2, foreheadCenterYAdjusted));
+  console.log('[SkinColor] [Rollback Point 24] Forehead sampling adjusted: foreheadTopY=' + foreheadTopY.toFixed(1) + ', raw=' + foreheadCenterYRaw.toFixed(1) + ', adjusted=' + foreheadCenterYAdjusted.toFixed(1) + ', final=' + foreheadCenterY.toFixed(1));
   
   // 2. 下巴区域 (chin)
   const chinCenterX = (pos[4].x + pos[12].x) / 2;
@@ -825,6 +850,7 @@ function getLightestSkinColor(
     const regionBottom = Math.floor(centerY + regionSize / 2);
     const regionLeft = Math.floor(centerX - regionSize / 2);
     const regionRight = Math.floor(centerX + regionSize / 2);
+    console.log(`[SkinColor] Sampling ${name} region: x=${regionLeft}-${regionRight}, y=${regionTop}-${regionRight}, center=(${centerX.toFixed(0)}, ${centerY.toFixed(0)})`);
     
     for (let y = regionTop; y < regionBottom; y += 2) {
       for (let x = regionLeft; x < regionRight; x += 2) {
@@ -878,6 +904,7 @@ function getLightestSkinColor(
   };
   
   const chinBrightness = sampleChinBrightness();
+  console.log('[SkinColor] Chin brightness:', chinBrightness.toFixed(1));
 
   // 分析整个面部区域的亮度分布，判断是否为深肤色
   // 深肤色像素亮度通常在 15-45 范围
@@ -924,6 +951,7 @@ function getLightestSkinColor(
     
     const darkPixelRatio = totalPixelCount > 0 ? darkPixelCount / totalPixelCount : 0;
     
+    console.log('[SkinColor] Face brightness distribution:', {
       faceRegion: { top: faceTop.toFixed(0), bottom: faceBottom.toFixed(0), left: faceLeft.toFixed(0), right: faceRight.toFixed(0) },
       darkPixelCount,
       totalPixelCount,
@@ -970,6 +998,7 @@ function getLightestSkinColor(
   // [Rollback Point 23] 额头被头发覆盖检测（需要在权重计算前定义）
   const foreheadCoveredByHair = regions.find(r => r.name === 'forehead' && r.brightness < 30);
   if (foreheadCoveredByHair) {
+    console.log('[SkinColor] [Rollback Point 23] Forehead covered by hair (brightness < 30), excluding from skin color calculation');
   }
   
   // 计算加权平均亮度（鼻子权重2x，额头权重0.5x，但头发覆盖时权重为0）
@@ -1029,6 +1058,9 @@ function getLightestSkinColor(
   // 标记是否需要深肤色调整（任一条件触发时）
   const needsDarkSkinAdjustment = useAvgForDark;
   
+  console.log('[SkinColor] Region comparison:', regions.map(r => `${r.name}: brightness=${r.brightness.toFixed(1)}`));
+  console.log('[SkinColor] Selected lightest region:', lightest.name, 'with color:', lightest);
+  console.log('[SkinColor] Average brightness:', avgBrightness.toFixed(1), 'useAvgForDark:', useAvgForDark);
   
   // 如果是深肤色情况，使用面部整体平均亮度来分类肤色（而非仅限采样区域）
   if (useAvgForDark) {
@@ -1042,6 +1074,7 @@ function getLightestSkinColor(
       darkPixelRatio,
       needsDarkSkinAdjustment: true
     };
+    console.log('[SkinColor] Using average region for dark skin:', avgRegion);
     return avgRegion;
   }
   
@@ -1064,6 +1097,7 @@ function calculateHairRegion(
   
   // black 人种：使用额头区域的短茬纹理（非传统发际线以上区域）
   if (ethnicity === 'black') {
+    console.log('[ColorDetection] Using African short hair texture region for hair color');
     // 使用点27（鼻根位置）作为参考，向上延伸到发际线
     const noseBridgeY = pos[27].y;  // 鼻根
     const browCenterY = (pos[19].y + pos[24].y) / 2;  // 眉毛中心
@@ -1103,6 +1137,7 @@ function calculateHairRegion(
     // 同时增大采样高度，因为刘海可能很厚
     hairTop = Math.max(0, foreheadTopY - (foreheadBottomY - foreheadTopY) * 1.5);
     hairHeight = Math.max(h * 0.15, (foreheadTopY - hairTop) * 2.0);
+    console.log('[ColorDetection] Has bangs, adjusting hair region upward');
   } else {
     // [ROLLBACK POINT 3] 头发区域计算优化
     // 原始逻辑：使用固定额头高度倍数，可能导致头发区域偏上或偏下
@@ -1121,6 +1156,7 @@ function calculateHairRegion(
     // 优化：使用更大的额头倍数确保高度足够
     hairHeight = Math.max(h * 0.25, foreheadHeight * 3.5);  // 增加覆盖高度
     
+    console.log('[ColorDetection] No bangs, using extended hair region for short hair [ROLLBACK POINT 3]');
   }
   
   // [ROLLBACK POINT 12] 修复头发颜色检测问题
@@ -1136,7 +1172,9 @@ function calculateHairRegion(
   
   // 使用发际线中心点作为头发区域的 x 中心
   const hairlineCenterX = (pos[19].x + pos[24].x) / 2;
+  console.log('[ColorDetection] Hair center X: hairlineCenterX=' + hairlineCenterX.toFixed(1) + ' vs faceCenterX=' + ((faceLeftX + faceRightX) / 2).toFixed(1));
   
+  console.log('[ColorDetection] Hair region:', { 
     hairTop: hairTop.toFixed(1), 
     hairHeight: hairHeight.toFixed(1), 
     hairWidth: hairWidth.toFixed(1), 
@@ -1160,6 +1198,7 @@ function calculateHairRegion(
   // 诊断：检查 pos[0].x + pos[16].x 的值
   const faceLeftMost = pos[0].x;
   const faceRightMost = pos[16].x;
+  console.log('[ColorDetection] Face extreme points: left=' + faceLeftMost.toFixed(1) + ', right=' + faceRightMost.toFixed(1) + ', sum=' + (faceLeftMost + faceRightMost).toFixed(1));
   
   // [ROLLBACK POINT 12 continued] 诊断采样区域的像素
   // 头发区域应该是图像顶部，而不是基于面部水平中心
@@ -1167,6 +1206,7 @@ function calculateHairRegion(
   
   const hairRegionX = Math.max(0, Math.floor(hairlineCenterX - hairWidth / 2));
   const hairRegionY = Math.max(0, Math.floor(hairTop));
+  console.log('[ColorDetection] Actual hair sampling region: x=[' + hairRegionX + '-' + (hairRegionX + Math.floor(hairWidth)) + '], y=[' + hairRegionY + '-' + (hairRegionY + Math.floor(hairHeight)) + ']');
   
   return {
     x: hairRegionX,
