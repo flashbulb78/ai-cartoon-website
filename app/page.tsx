@@ -97,14 +97,12 @@ export default function HomePage() {
         // 如果检测到性别，仅记录，不自动设置按钮
         if (result.gender) {
           setDetectedGender(result.gender);
-          console.log('[Page] Detected gender:', result.gender);
         }
         
         // 全面人脸分析（包含肤色、发色、眼睛颜色、人种、头发特征等）
         // 使用原始图像而非裁剪图像，以便检测喉结等需要完整图像的特征
         const analysis = await analyzeFace(originalImage);
         setFaceAnalysis(analysis);
-        console.log('[Page] Face analysis result:', analysis);
         
         // 如果人脸检测失败，提示用户更换照片
         if (!analysis.faceDetected) {
@@ -173,11 +171,6 @@ export default function HomePage() {
 
     try {
       // 6. 调用API
-      console.log('[Page] Sending generation request');
-      console.log('[Page] selectedImage type:', typeof selectedImage);
-      console.log('[Page] selectedImage length:', selectedImage?.length);
-      console.log('[Page] selectedImage prefix:', selectedImage?.substring(0, 50));
-      console.log('[Page] selectedStyle:', selectedStyle);
       
       const response = await fetch('/api/generate', {
         method: 'POST',
@@ -195,7 +188,6 @@ export default function HomePage() {
         }),
       });
       
-      console.log('[Page] Response status:', response.status);
 
       // 7. 解析响应
       const result: ApiResponse<GenerateResponseData> = await response.json();
@@ -256,7 +248,6 @@ export default function HomePage() {
    */
   const handleUpgrade = useCallback(() => {
     // TODO: 跳转DodoPayment支付页
-    console.log('Upgrade clicked - DodoPayment');
   }, []);
 
   return (

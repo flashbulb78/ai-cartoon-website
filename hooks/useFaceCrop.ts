@@ -63,17 +63,12 @@ export function useFaceCrop(): UseFaceCropReturn {
     setError(null);
 
     try {
-      console.log('[FaceCrop] Loading tiny_face_detector model...');
       await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-      console.log('[FaceCrop] tiny_face_detector loaded successfully');
 
       // 加载face_landmark_68_model用于性别检测
-      console.log('[FaceCrop] Loading face_landmark_68_model...');
       await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
-      console.log('[FaceCrop] face_landmark_68_model loaded successfully');
 
       isModelLoadedRef.current = true;
-      console.log('[FaceCrop] All models loaded successfully');
       return true;
     } catch (err) {
       console.error('[FaceCrop] Failed to load model:', err);
@@ -103,7 +98,6 @@ export function useFaceCrop(): UseFaceCropReturn {
     try {
       // 确保模型已加载
       if (!isModelLoadedRef.current) {
-        console.log('[FaceCrop] Model not loaded, attempting to load...');
         const loaded = await loadModels();
         if (!loaded) {
           return { success: false, error: 'Face detection model not loaded. Please refresh the page.' };
@@ -119,9 +113,7 @@ export function useFaceCrop(): UseFaceCropReturn {
         scoreThreshold: 0.35, // 降低阈值提高检测灵敏度
       });
       
-      console.log('[FaceCrop] Detecting faces...');
       const detections = await faceapi.detectAllFaces(img, faceDetectorOptions);
-      console.log('[FaceCrop] Detections:', detections.length);
 
       // 检查是否检测到人脸
       if (detections.length === 0) {
@@ -131,7 +123,6 @@ export function useFaceCrop(): UseFaceCropReturn {
       // 如果检测到多个人脸，选择最大的人脸
       let selectedDetection = detections[0];
       if (detections.length > 1) {
-        console.log('[FaceCrop] Multiple faces detected, selecting the largest one');
         // 计算每个人脸的面积，选择最大的
         let largestArea = detections[0].box.width * detections[0].box.height;
         selectedDetection = detections[0];
@@ -144,13 +135,11 @@ export function useFaceCrop(): UseFaceCropReturn {
           }
         }
         
-        console.log('[FaceCrop] Selected face with area:', largestArea.toFixed(0));
       }
 
       // 获取人脸边界框
       const detection = selectedDetection;
       const box = detection.box;
-      console.log('[FaceCrop] Face detected, box:', box);
 
       // 计算扩大后的人脸区域（保持正方形）
       const expandedBox = expandBoxToSquare(box, img.width, img.height, MARGIN);
@@ -185,7 +174,6 @@ export function useFaceCrop(): UseFaceCropReturn {
       // 转换为base64 (JPEG格式，95%质量)
       const croppedImageBase64 = canvas.toDataURL('image/jpeg', 0.95);
       
-      console.log('[FaceCrop] Face cropped successfully');
       // 性别检测在 analyzeFace 中通过本地 face-api.js 模型完成
       return { success: true, croppedImage: croppedImageBase64, gender: null };
     } catch (err) {
@@ -308,7 +296,6 @@ function detectGenderFromLandmarks(landmarks: faceapi.FaceLandmarks68): 'male' |
   // 眉眼距与眼距比例（女性通常眉眼距更大）
   const eyebrowEyeRatio = eyebrowEyeDistance / eyeDistance;
   
-  console.log('[GenderDetection] jawRatio:', jawRatio, 'eyebrowEyeRatio:', eyebrowEyeRatio);
   
   // 使用多个特征判断性别
   // 男性特征：下颌宽、眉眼距小

@@ -165,7 +165,6 @@ export async function createCheckoutSession(params: DodoCheckoutRequest): Promis
   }
   
   const data = await response.json();
-  console.log('[DodoPayment] Full response data:', JSON.stringify(data));
   
   return {
     session_id: data.session_id,

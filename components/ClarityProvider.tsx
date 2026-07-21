@@ -16,12 +16,10 @@ export function ClarityProvider({ children }: { children: React.ReactNode }) {
     if (process.env.NODE_ENV === 'production') {
       try {
         clarity.init(CLARITY_PROJECT_ID);
-        console.log('[Clarity] initialized in production mode');
       } catch (error) {
         console.error('[Clarity] init failed:', error);
       }
     } else {
-      console.log('[Clarity] skipped in development mode');
     }
   }, []);
 

@@ -90,7 +90,6 @@ export function SocialAvatarDownload({
     size: number,
     offset: PositionOffset
   ) => {
-    console.log('drawImageToCanvas called:', { 
       offsetX: offset.x, 
       offsetY: offset.y,
       imgWidth: img.width,
@@ -119,7 +118,6 @@ export function SocialAvatarDownload({
     const scaledWidth = img.width * scale;
     const scaledHeight = img.height * scale;
     
-    console.log('Scaled dimensions:', { scaledWidth, scaledHeight, scale });
     
     // Base offset (center the image) - this is negative because we're positioning the image
     const baseOffsetX = (size - scaledWidth) / 2;
@@ -137,7 +135,6 @@ export function SocialAvatarDownload({
     const drawX = baseOffsetX + offset.x * effectiveMoveX;
     const drawY = baseOffsetY + offset.y * effectiveMoveY;
     
-    console.log('Draw position:', { drawX, drawY, moveRangeX, moveRangeY, effectiveMoveX, effectiveMoveY });
 
     ctx.drawImage(img, drawX, drawY, scaledWidth, scaledHeight);
     
@@ -160,17 +157,14 @@ export function SocialAvatarDownload({
 
     // If we have a cached image, use it directly
     if (imageRef.current) {
-      console.log('Using cached image, offset:', positionOffset);
       drawImageToCanvas(ctx, imageRef.current, size, positionOffset);
       return;
     }
 
     // Otherwise, load the image
-    console.log('Loading new image:', imageUrl);
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      console.log('Image loaded successfully');
       // Cache the image
       imageRef.current = img;
       drawImageToCanvas(ctx, img, size, positionOffset);

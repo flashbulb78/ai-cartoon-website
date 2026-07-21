@@ -113,25 +113,18 @@ export function validateEnvironment(): EnvValidationResult {
 export function logEnvironmentStatus(): void {
   const result = validateEnvironment();
 
-  console.log('\n========== Environment Variables Check ==========');
   
   if (result.valid) {
-    console.log('✅ All required environment variables are configured.');
   } else {
-    console.log('❌ Environment variable configuration errors:');
     for (const error of result.errors) {
-      console.log(`   - ${error.variable}: ${error.message}`);
     }
   }
 
   if (result.warnings.length > 0) {
-    console.log('\n⚠️  Optional variables (using defaults):');
     for (const warning of result.warnings) {
-      console.log(`   - ${warning}`);
     }
   }
 
-  console.log('================================================\n');
 }
 
 /**

@@ -35,7 +35,6 @@ function ResetPasswordForm() {
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session) {
-          console.log('[ResetPassword] Session already exists');
           setIsReady(true);
           setIsLoading(false);
           return;
@@ -46,7 +45,6 @@ function ResetPasswordForm() {
         const refreshToken = searchParams.get('refresh_token');
 
         if (accessToken && refreshToken) {
-          console.log('[ResetPassword] Found tokens in URL, exchanging for session');
           
           const { data, error: setSessionError } = await supabase.auth.setSession({
             access_token: accessToken,
@@ -57,14 +55,12 @@ function ResetPasswordForm() {
             console.error('[ResetPassword] Set session error:', setSessionError);
             setError('Invalid or expired reset link. Please request a new one.');
           } else if (data.session) {
-            console.log('[ResetPassword] Session restored successfully');
             setIsReady(true);
           } else {
             setError('Failed to restore session. Please request a new reset link.');
           }
         } else {
           // 没有 token 且没有 session
-          console.log('[ResetPassword] No tokens in URL and no existing session');
           setError('Invalid reset link. Please request a new password reset email.');
         }
       } catch (err) {

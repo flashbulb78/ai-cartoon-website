@@ -168,7 +168,6 @@ export function createRateLimiter(config: RateLimitConfig, action: string = 'api
       'X-RateLimit-Reset': String(Math.floor(Date.now() / 1000) + result.resetInSeconds),
     });
     
-    console.log(`[RateLimit] Rate limit exceeded for action ${action}: ${config.maxRequests}/${config.windowSeconds}s`);
     
     return new Response(
       JSON.stringify({

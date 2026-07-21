@@ -37,12 +37,10 @@ export function detectBeardLocal(
   // 如果下巴中心超出图像，说明人脸可能部分在图像外或照片构图问题
   // 使用安全的上限值
   if (chinCenterY > height - 20) {
-    console.log(`[BeardDetect] [WARNING] chinCenterY=${chinCenterY.toFixed(1)} exceeds image height=${height}, using safe value`);
     chinCenterY = height - 20;
   }
   
   // 调试：显示下巴采样区域
-  console.log(`[BeardDetect] Chin sampling region: chinCenter=(${chinCenterX.toFixed(1)}, ${chinCenterY.toFixed(1)}), y range: ${chinCenterY.toFixed(1)} to ${(chinCenterY + 25).toFixed(1)}, x range: ${(chinCenterX - 30).toFixed(1)} to ${(chinCenterX + 30).toFixed(1)}`);
   
   // 参考区域：额头（通常不受胡须影响）
   const foreheadCenterX = (pos[19].x + pos[24].x) / 2;
@@ -95,7 +93,6 @@ export function detectBeardLocal(
   const brightnessRatio = avgChinBrightness / avgForeheadBrightness;
   const darkPixelRatio = chinTotalPixels > 0 ? chinDarkPixels / chinTotalPixels : 0;
   
-  console.log(`[BeardDetect] Chin avg brightness: ${avgChinBrightness.toFixed(1)}, Forehead: ${avgForeheadBrightness.toFixed(1)}, Ratio: ${brightnessRatio.toFixed(2)}, Dark pixels: ${(darkPixelRatio * 100).toFixed(1)}%`);
   
   // ========== [DEBUG] 下巴取样区域详细诊断 ==========
   // 注意：此诊断代码放在这里是为了在textureRatio计算之后使用
@@ -170,7 +167,6 @@ export function detectBeardLocal(
   
   const chinTextureRatio = chinTextureTotal > 0 ? chinTextureEdges / chinTextureTotal : 0;
   // 调试：显示纹理检测详情
-  console.log(`[BeardDetect] Texture detection: edgeStrength > 30, chinTextureEdges=${chinTextureEdges}, chinTextureTotal=${chinTextureTotal}, ratio=${(chinTextureRatio * 100).toFixed(1)}%`);
   const rightCheekTextureRatio = rightCheekTextureTotal > 0 ? rightCheekTextureEdges / rightCheekTextureTotal : 0;
   const foreheadTextureRatio = foreheadTextureTotal > 0 ? foreheadTextureEdges / foreheadTextureTotal : 0;
   // 下巴纹理与右脸颊纹理比值（如果下巴有胡须，比值应 > 1.2）
@@ -181,7 +177,6 @@ export function detectBeardLocal(
   const textureRatio = Math.max(textureRatioCheek, textureRatioForehead);
   const usingForeheadRatio = textureRatioForehead > textureRatioCheek;
   
-  console.log(`[BeardDetect] Texture - chin: ${(chinTextureRatio * 100).toFixed(1)}%, rightCheek: ${(rightCheekTextureRatio * 100).toFixed(1)}%, forehead: ${(foreheadTextureRatio * 100).toFixed(1)}%, ratioCheek: ${textureRatioCheek.toFixed(2)}, ratioForehead: ${textureRatioForehead.toFixed(2)}, final: ${textureRatio.toFixed(2)}${usingForeheadRatio ? ' (using forehead)' : ''}`);
   
   // ========== [DEBUG] 下巴取样区域详细诊断 ==========
   // 收集下巴区域的亮度分布，用于诊断
@@ -205,16 +200,11 @@ export function detectBeardLocal(
   }
   
   const totalBucketPixels = brightnessBuckets.dark + brightnessBuckets.medium + brightnessBuckets.light + brightnessBuckets.bright;
-  console.log(`[BeardDetect] [DIAGNOSTIC] Chin sampling region: y[${chinSampleTop}-${chinSampleBottom}], x[${chinSampleLeft}-${chinSampleRight}], imageSize=${width}x${height}`);
   if (totalBucketPixels === 0) {
-    console.log(`[BeardDetect] [DIAGNOSTIC] WARNING: No pixels sampled! This indicates the sampling region is outside image bounds. chinCenterY=${chinCenterY.toFixed(1)}, imageHeight=${height}`);
   }
-  console.log(`[BeardDetect] [DIAGNOSTIC] Brightness distribution: dark(<80)=${brightnessBuckets.dark}(${totalBucketPixels > 0 ? (brightnessBuckets.dark/totalBucketPixels*100).toFixed(1) : '0.0'}%), medium(80-140)=${brightnessBuckets.medium}(${totalBucketPixels > 0 ? (brightnessBuckets.medium/totalBucketPixels*100).toFixed(1) : '0.0'}%), light(140-180)=${brightnessBuckets.light}(${totalBucketPixels > 0 ? (brightnessBuckets.light/totalBucketPixels*100).toFixed(1) : '0.0'}%), bright(>180)=${brightnessBuckets.bright}(${totalBucketPixels > 0 ? (brightnessBuckets.bright/totalBucketPixels*100).toFixed(1) : '0.0'}%)`);
   
   // 诊断：如果下巴大部分是亮像素(>180)且亮度比接近1.0，可能是花白胡子或无胡子
   if (totalBucketPixels > 0 && brightnessBuckets.bright / totalBucketPixels > 0.5 && brightnessRatio > 0.95 && brightnessRatio < 1.15) {
-    console.log(`[BeardDetect] [DIAGNOSTIC] WARNING: Chin is mostly bright pixels with ratio ~1.0. This pattern suggests: (1) No beard OR (2) Light colored beard that doesn't create texture. Current beard detection may fail.`);
-    console.log(`[BeardDetect] [DIAGNOSTIC] To detect light beard, we need textureRatio > 2.20 but got ${textureRatio.toFixed(2)}, chinTextureRatio > 5% but got ${(chinTextureRatio * 100).toFixed(1)}%`);
   }
   
   // 判断标准：
@@ -255,7 +245,6 @@ export function detectBeardLocal(
     (chinCenterR > chinCenterG * 1.1 && chinCenterG > chinCenterB * 0.9); // reddish/brownish
   const isHandLikeTexture = textureRatio > 4.5 && brightnessRatio < 0.5 && !isBeardLikeColor;
   if (isHandLikeTexture) {
-    console.log(`[BeardDetect] [Rollback Point 28] Hand-like texture detected: textureRatio=${textureRatio.toFixed(2)}, brightnessRatio=${brightnessRatio.toFixed(2)}, isBeardLikeColor=${isBeardLikeColor}, treating as no beard`);
     return { hasBeard: false, beardLength: 'none', beardShape: 'unknown', beardColor: 'unknown' };
   }
   // 增加上限检查：如果textureRatio过高(>4.0)但darkPixelRatio低(<8%)，不触发（可能是头发texture）
@@ -320,7 +309,6 @@ export function detectBeardLocal(
   const hasBeardByColorUniformity = (skinTone !== 'dark' && skinTone !== 'medium_dark')
     && darkPixelUniformity > 0.5 && avgColorDeviation < 25 && darkPixelRatio > 0.08 && brightnessRatio < 1.0;  // [ROLLBACK POINT 44 - ISSUE-4]
   
-  console.log(`[BeardDetect] Color uniformity: darkPixelUniformity=${(darkPixelUniformity * 100).toFixed(1)}%, avgColorDeviation=${avgColorDeviation.toFixed(1)}`);
   
   // [ROLLBACK POINT 8] 花白胡子检测阈值修复
   // 问题：brightnessRatio < 1.35 太严格，无法检测到亮度差异超过 35% 的花白胡子
@@ -335,14 +323,12 @@ export function detectBeardLocal(
   const hasBeardByLightColor = avgForeheadBrightness > 80 && brightnessRatio > 1.0 && brightnessRatio < 1.70 && 
                                 avgChinBrightness < 200 && textureRatio > 2.20 && chinTextureRatio > 0.05;
   
-  console.log(`[BeardDetect] Light beard check: brightnessRatio=${brightnessRatio.toFixed(2)}, textureRatio=${textureRatio.toFixed(2)}, chinTextureRatio=${(chinTextureRatio * 100).toFixed(1)}%, hasLightBeard=${hasBeardByLightColor}`);
   
   // [Rollback Point 20] 衣服误检保护：如果下巴极暗(brightnessRatio<0.1)且textureRatio极低(<0.5)，可能是衣服误检
   // 因为胡子即使很短也会有一定的纹理，而衣服（如黑色毛衣）可能完全没有纹理
   // 注意：这种情况对男女都适用，因为真正的胡子不可能完全没有纹理
   const isClothingLikeDarkness = brightnessRatio < 0.1 && textureRatio < 0.5;
   if (isClothingLikeDarkness) {
-    console.log(`[BeardDetect] [Rollback Point 20] Clothing-like darkness detected: brightnessRatio=${brightnessRatio.toFixed(2)}, textureRatio=${textureRatio.toFixed(2)}, treating as no beard`);
     return { hasBeard: false, beardLength: 'none', beardShape: 'unknown', beardColor: 'unknown' };
   }
   
@@ -376,10 +362,8 @@ export function detectBeardLocal(
       const avgB = totalB / colorCheckCount;
       // 如果蓝色通道明显高于红色通道（B > R * 1.3），说明采样到了蓝色系衣物而非胡子
       if (avgB > avgR * 1.3) {
-        console.log(`[BeardDetect] Color check failed: avgRGB=(${avgR.toFixed(0)},${(totalG/colorCheckCount).toFixed(0)},${avgB.toFixed(0)}), blue dominant, treating as clothing, not beard`);
         return { hasBeard: false, beardLength: 'none', beardShape: 'unknown', beardColor: 'unknown' };
       }
-      console.log(`[BeardDetect] Color check passed: avgRGB=(${avgR.toFixed(0)},${(totalG/colorCheckCount).toFixed(0)},${avgB.toFixed(0)}), warm/brown tones`);
     }
   }
   
@@ -489,8 +473,6 @@ export function detectBeardLocal(
     lightSat = max === min ? 0 : (max - min) / (1 - Math.abs(2 * lightAvgBrightness - 1)) / 255;
   }
   
-  console.log(`[BeardDetect] Beard color - Dark: RGB(${avgR.toFixed(0)}, ${avgG.toFixed(0)}, ${avgB.toFixed(0)}), brightness: ${(avgBrightness * 100).toFixed(0)}%, sat: ${(sat * 100).toFixed(0)}%, pixels: ${chinPixels}`);
-  console.log(`[BeardDetect] Beard color - Light: RGB(${lightAvgR.toFixed(0)}, ${lightAvgG.toFixed(0)}, ${lightAvgB.toFixed(0)}), brightness: ${(lightAvgBrightness * 100).toFixed(0)}%, sat: ${(lightSat * 100).toFixed(0)}%, pixels: ${lightChinPixels}`);
   
   // 胡须颜色检测 - 简化的三色检测法
   // 使用合并像素计算整体特征
@@ -513,7 +495,6 @@ export function detectBeardLocal(
     const allSat = allMax === allMin ? 0 : (allMax - allMin) / 255;
     const allRgbDiff = allMax - allMin;
     
-    console.log(`[BeardDetect] All pixels: RGB(${allAvgR.toFixed(0)},${allAvgG.toFixed(0)},${allAvgB.toFixed(0)}), brt=${(allBrightness*100).toFixed(0)}%, sat=${(allSat*100).toFixed(0)}%, rgbDiff=${allRgbDiff.toFixed(0)}`);
     
     // 红胡子：高饱和度 + R是主色 - 提高优先级，sat>35%就直接检测为红色
     if (allSat > 0.35 && allAvgR > allAvgG && allAvgR > allAvgB) {
@@ -546,7 +527,6 @@ export function detectBeardLocal(
     }
   }
   
-  console.log(`[BeardDetect] Detected: hasBeard=${hasBeard}, length=${beardLength}, shape=${beardShape}, color=${beardColor}`);
   
   return { hasBeard, beardLength, beardShape, beardColor };
 }
