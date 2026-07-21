@@ -157,6 +157,8 @@ async function fetchWithRetry(
         RETRY_CONFIG.baseDelayMs * Math.pow(2, retryCount),
         RETRY_CONFIG.maxDelayMs
       );
+      console.log(`[MiniMax] Retry ${retryCount + 1}/${RETRY_CONFIG.maxRetries} after ${delay}ms delay`);
+      console.log(`[MiniMax] Retry reason: status_code=${data.status_code}, HTTP status=${response.status}`);
       await new Promise(resolve => setTimeout(resolve, delay));
       return fetchWithRetry(url, options, retryCount + 1);
     }
@@ -167,11 +169,13 @@ async function fetchWithRetry(
 
     // 判断是否是超时错误
     if (error instanceof Error && error.name === 'AbortError') {
+      console.log(`[MiniMax] Request timeout after ${MINIMAX_TIMEOUT}ms`);
       if (retryCount < RETRY_CONFIG.maxRetries) {
         const delay = Math.min(
           RETRY_CONFIG.baseDelayMs * Math.pow(2, retryCount),
           RETRY_CONFIG.maxDelayMs
         );
+        console.log(`[MiniMax] Retry ${retryCount + 1}/${RETRY_CONFIG.maxRetries} after ${delay}ms delay (timeout)`);
         await new Promise(resolve => setTimeout(resolve, delay));
         return fetchWithRetry(url, options, retryCount + 1);
       }
@@ -198,6 +202,9 @@ export async function generateCartoonAvatar(
   genderForce?: 'male' | 'female',
   faceAnalysis?: FaceAnalysisResult
 ): Promise<ApiResponse<GenerateResponseData>> {
+  console.log('[MiniMax] Starting avatar generation request');
+  console.log('[MiniMax] Style:', style);
+  console.log('[MiniMax] Image base64 length:', imageBase64.length);
 
   // 1. 验证配置
   const configValidation = validateConfig();
@@ -211,7 +218,10 @@ export async function generateCartoonAvatar(
 
   try {
     // 2. 清理Base64图片
+    console.log('[MiniMax] Original image starts with:', imageBase64.substring(0, 50));
     const cleanImage = cleanBase64Image(imageBase64);
+    console.log('[MiniMax] Cleaned image starts with:', cleanImage.substring(0, 50));
+    console.log('[MiniMax] Cleaned image base64 length:', cleanImage.length);
 
     // 3. 构建提示词
     const stylePrompt = STYLE_PROMPTS[style] || STYLE_PROMPTS.japanese_anime;
@@ -294,8 +304,14 @@ export async function generateCartoonAvatar(
     let negativePrompt = '';
     if (faceAnalysis?.ethnicity === 'black' && faceAnalysis?.hairLength === 'bald') {
       negativePrompt = 'long hair, medium hair, short hair, any hair on head, hair strands, follicular hair, fuzzy head';
+      console.log('[MiniMax] Black bald detected, using negative prompt for hair');
     }
     
+    console.log('========== [MiniMax] GENERATED PROMPT ==========');
+    console.log(prompt);
+    console.log('========== [MiniMax] PROMPT END ==========');
+    console.log('[MiniMax] Face similarity strength:', FACE_SIMILARITY_STRENGTH);
+    console.log('[MiniMax] Style strength:', STYLE_STRENGTH);
 
     // 4. 构建请求体 - 符合MiniMax API格式
     // 添加控制参数以更好地保留人脸特征
@@ -340,13 +356,20 @@ export async function generateCartoonAvatar(
       enhance_skin: false,
     };
 
+    console.log('[MiniMax] Request body keys:', Object.keys(requestBody));
+    console.log('[MiniMax] Request body model:', requestBody.model);
+    console.log('[MiniMax] Request body prompt length:', requestBody.prompt.length);
+    console.log('[MiniMax] Request body image length:', requestBody.image.length);
+    console.log('[MiniMax] API Endpoint:', `${MINIMAX_BASE_URL}/image_generation`);
     
     // 打印完整请求体（用于调试）
+    console.log('[MiniMax] Full request body:', JSON.stringify({
       ...requestBody,
       image: requestBody.image.substring(0, 50) + '... (truncated for log)',
     }));
 
     // 5. 调用MiniMax API（带重试机制）
+    console.log(`[MiniMax] Making API call with ${MINIMAX_TIMEOUT}ms timeout and up to ${RETRY_CONFIG.maxRetries} retries`);
     const { response, data } = await fetchWithRetry(
       `${MINIMAX_BASE_URL}/image_generation`,
       {
@@ -359,6 +382,8 @@ export async function generateCartoonAvatar(
       }
     );
 
+    console.log('[MiniMax] Response status:', response.status);
+    console.log('[MiniMax] Response ok:', response.ok);
 
     // 6. 处理错误响应
     if (!response.ok) {
@@ -375,6 +400,8 @@ export async function generateCartoonAvatar(
       };
     }
 
+    console.log('[MiniMax] Response data keys:', Object.keys(data));
+    console.log('[MiniMax] Response data:', JSON.stringify(data).substring(0, 300));
 
     // 检查API返回的错误
     if (data.error) {
@@ -403,14 +430,19 @@ export async function generateCartoonAvatar(
     // 尝试多种可能的响应格式
     if (responseData?.image_base64?.[0]) {
       imageUrl = responseData.image_base64[0];
+      console.log('[MiniMax] Found image in data.image_base64[0]');
     } else if (responseData?.images?.[0]?.b64_image) {
       imageUrl = responseData.images[0].b64_image;
+      console.log('[MiniMax] Found image in data.images[0].b64_image');
     } else if (data.b64_image) {
       imageUrl = data.b64_image as string;
+      console.log('[MiniMax] Found image in b64_image');
     } else if (data.image) {
       imageUrl = data.image as string;
+      console.log('[MiniMax] Found image in image field');
     } else if (responseData?.image) {
       imageUrl = responseData.image;
+      console.log('[MiniMax] Found image in data.image');
     }
 
     if (!imageUrl) {
@@ -421,6 +453,7 @@ export async function generateCartoonAvatar(
       };
     }
 
+    console.log('[MiniMax] Successfully extracted image, length:', imageUrl.length);
 
     // 9. 返回成功结果
     return {

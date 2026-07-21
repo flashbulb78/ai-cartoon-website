@@ -90,12 +90,6 @@ export function SocialAvatarDownload({
     size: number,
     offset: PositionOffset
   ) => {
-      offsetX: offset.x, 
-      offsetY: offset.y,
-      imgWidth: img.width,
-      imgHeight: img.height,
-      canvasSize: size 
-    });
     
     // Clear entire canvas
     ctx.clearRect(0, 0, size, size);

@@ -26,6 +26,7 @@ async function loadModels(): Promise<boolean> {
       faceapi.loadFaceLandmarkModel(MODEL_URL),
     ]);
     modelsLoaded = true;
+    console.log('[FaceAnalysis] Models loaded successfully');
     return true;
   } catch (error) {
     console.error('[FaceAnalysis] Failed to load models:', error);
@@ -163,6 +164,7 @@ function detectGenderEnhanced(
   if (hasNecklace) femaleScore += 0.15;
   
   const totalScore = maleScore + femaleScore;
+  console.log(`[GenderDetect] maleScore=${maleScore.toFixed(2)}, femaleScore=${femaleScore.toFixed(2)}, totalScore=${totalScore.toFixed(2)}`);
   
   // 有胡须的情况下，maleScore已额外+0.5分
   
@@ -359,6 +361,7 @@ function detectLipShape(landmarks: faceapi.FaceLandmarks68): 'full' | 'thin' | '
   const mouthWidth = Math.abs(pos[54].x - pos[48].x);
   const lipRatio = lipHeight / mouthWidth;
   
+  console.log(`[LipShape] lipHeight=${lipHeight.toFixed(1)}, mouthWidth=${mouthWidth.toFixed(1)}, lipRatio=${lipRatio.toFixed(3)}`);
   
   // 提高阈值：full lips 应该是明显的厚嘴唇
   if (lipRatio > 0.35) return 'full';
@@ -416,6 +419,7 @@ function detectEyebrowAngle(landmarks: faceapi.FaceLandmarks68): number {
   
   const avgEyebrowDrop = (leftEyebrowDrop + rightEyebrowDrop) / 2;
   
+  console.log(`[EyebrowAngle] leftDrop=${leftEyebrowDrop.toFixed(3)}, rightDrop=${rightEyebrowDrop.toFixed(3)}, avgDrop=${avgEyebrowDrop.toFixed(3)}`);
   
   return avgEyebrowDrop;
 }
@@ -537,6 +541,7 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
     frameEdgeScore = totalEdgeScore / (expectedFrameWidth * 2 + 50);
     
     // [Rollback Point 32] 添加诊断日志
+    console.log('[DetectGlasses] Edge diagnostic:', {
       horizontalEdgeCount,
       frameWidthCount,
       bridgeEdgeCount,
@@ -594,6 +599,7 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
     lensBrightness = brightnessCount > 0 ? brightnessSum / brightnessCount : 255;
     // 注意：不再仅根据 lens brightness 判断墨镜，需要先检测到镜框才能判定
     // 如果没有检测到镜框（frameEdgeScore低），即使镜片暗也可能是阴影，不判定为墨镜
+    console.log('[DetectGlasses] Lens brightness:', lensBrightness.toFixed(1));
   }
 
   // ========== 综合判断（如果镜片不是暗的，再检测普通眼镜）==========
@@ -649,6 +655,7 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
   // [ISSUE-9] 修复：戴眼镜微笑的人 frameEdgeScore 会降低但 landmarkScore 可靠
   // 当 landmarkScore >= 2 时，面部几何特征已足够确认眼镜，降低 frameEdgeScore 要求
   const isSmiling = chinBrightness > 180;
+  console.log('[DetectGlasses] Debug: landmarkScore=', landmarkScore, 'frameEdgeScore=', frameEdgeScore.toFixed(3), 'chinBrightness=', chinBrightness.toFixed(1), 'lensBrightness=', lensBrightness.toFixed(1));
   // 根据 landmarkScore 调整边缘检测阈值：landmarkScore 越高，对 frameEdgeScore 的要求越低
   const effectiveEdgeThreshold = isSmiling
     ? (landmarkScore >= 2 ? 0.50 : 0.90)  // landmark>=2时微笑惩罚降低
@@ -662,6 +669,7 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
   // [ISSUE-8] 修复：提高 lensBrightness 阈值从 55→35，防止浓眉/深眼窝的白人男性被误判
   // 同时 landmarkScore 需要 >= 2（面部几何特征匹配），frameEdgeScore > 0.30
   const isDarkSkinWithDarkGlasses = !isSmiling && lensBrightness < 35 && landmarkScore >= 2 && frameEdgeScore > 0.30;
+  console.log('[DetectGlasses] Dark skin with dark glasses fallback:', isDarkSkinWithDarkGlasses);
   
   // [Rollback Point 30] 新增：sunglasses 专用检测条件
   // [ISSUE-8] 修复：提高 lensBrightness 阈值从 70→40，frameEdgeScore 从 0.40→0.50
@@ -690,8 +698,10 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
     // [ISSUE-8] 修复：lensBrightness < 80 太宽松，浓眉/深眼窝也会导致低亮度
     // 提高阈值到 lensBrightness < 40 才判定为 sunglasses
     if (lensBrightness < 40) {
+      console.log('[DetectGlasses] Sunglasses detected, lens brightness:', lensBrightness.toFixed(1), 'frameEdgeScore:', frameEdgeScore.toFixed(3));
       return { hasGlasses: true, glassesType: 'sunglasses' };
     }
+    console.log('[DetectGlasses] Glasses detected, landmarkScore:', landmarkScore, 'frameEdgeScore:', frameEdgeScore.toFixed(3));
     return { hasGlasses: true, glassesType: 'normal' };
   }
   
@@ -755,6 +765,7 @@ function detectGlassesFrameColor(imageData: ImageData | undefined, pos: faceapi.
   
   // 计算平均颜色
   if (frameColors.length < 5) {
+    console.log('[GlassesFrameColor] Not enough samples:', frameColors.length);
     return 'unknown' as const;
   }
   
@@ -768,6 +779,7 @@ function detectGlassesFrameColor(imageData: ImageData | undefined, pos: faceapi.
   avgG = Math.round(avgG / frameColors.length);
   avgB = Math.round(avgB / frameColors.length);
   
+  console.log('[GlassesFrameColor] Detected avg color: RGB(', avgR, ',', avgG, ',', avgB, '), samples:', frameColors.length);
   
   // 根据颜色判断框架颜色
   // 黑色：RGB都较低（包括深灰色镜框）
@@ -890,6 +902,7 @@ function detectHairShape(imageData: ImageData): { shape: HairShape; confidence: 
   const vRatio = verticalEdges / totalEdges;
   const dRatio = diagonalEdges / totalEdges;
   
+  console.log(`[HairShape] edges: total=${totalEdges}, h=${horizontalEdges}(${(hRatio*100).toFixed(1)}%), v=${verticalEdges}(${(vRatio*100).toFixed(1)}%), d=${diagonalEdges}(${(dRatio*100).toFixed(1)}%)`);
   
   // 对于非洲人短卷发，vRatio通常较高（>17%），应优先检测卷发
   // 如果 vRatio 超过 17%，就检测为卷发，因为短卷发会有更多垂直边缘
@@ -985,6 +998,7 @@ function hasChinBeardTexture(imageData: ImageData, landmarks: faceapi.FaceLandma
   }
   
   const ratio = totalPixels > 0 ? darkPixels / totalPixels : 0;
+  console.log(`[ChinBeard] dark=${darkPixels}/${totalPixels} (${(ratio*100).toFixed(1)}%)`);
   
   // 如果下巴区域暗像素比例超过30%，确认有胡须（避免阴影误判）
   return ratio > 0.30;
@@ -1002,6 +1016,7 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
     // 使用发际线位置（pos[19]和pos[24]的Y坐标）作为参考
     const hairlineY = Math.min(pos[19].y, pos[24].y);
     // [ROLLBACK POINT 27] 修复头顶区域扫描范围 - 添加调试日志
+    console.log(`[HairLength] [DEBUG] hairlineY=${hairlineY.toFixed(1)}, pos[19].y=${pos[19].y.toFixed(1)}, pos[24].y=${pos[24].y.toFixed(1)}, imageSize=${width}x${height}`);
     // [ROLLBACK POINT 27] 修复头顶区域扫描范围
     // 原问题：使用 hairlineY - 150 导致 hairTop ≈ 0，扫描区域覆盖不到头发（头发在 y=42-94）
     // 修复：使用更合理的头顶扫描范围，从发际线上方开始扫描
@@ -1045,6 +1060,7 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
     // 使用传入的hasBeard参数或回退到hasChinBeardTexture
     // hasBeard来自detectBeardLocal，更可靠
     const cheekBeard = hasBeard ?? hasChinBeardTexture(imageData, landmarks);
+    console.log(`[HairLength] Cheek beard (from detectBeardLocal: ${hasBeard}, from texture: ${hasChinBeardTexture(imageData, landmarks)})`);
     
     // 如果有络腮胡，定义胡须区域用于排除
     let beardRegionLeft = 0;
@@ -1133,6 +1149,7 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
     // 下巴以下的太阳穴区域比例更能区分披肩发和短发鬓角
     const templeBelowChinRatio = templeBelowChinTotalPixels > 0 ? templeBelowChinPixels / templeBelowChinTotalPixels : 0;
     
+    console.log(`[HairLength] Temple scan: left[${templeLeftStart}-${templeLeftEnd}], right[${templeRightStart}-${templeRightEnd}], imageSize=${width}x${height}, y[${templeScanTop}-${templeScanBottom}], templeRatio=${templeRatio.toFixed(3)}(${templeHairPixels}/${templeTotalPixels}), templeBelowChinRatio=${templeBelowChinRatio.toFixed(3)}(${templeBelowChinPixels}/${templeBelowChinTotalPixels})`);
     
     // 扫描肩膀区域（保留原有逻辑，但使用clamp确保边界正确）
     for (let y = Math.floor(shoulderTop); y < Math.floor(shoulderBottom); y += 3) {
@@ -1166,7 +1183,9 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
     // [ORIGINAL]
     const hairRatio = topRatio * 0.2 + templeRatio * 0.4 + shoulderRatio * 0.4;
     
+    console.log(`[HairLength] Hair region: topRatio=${topRatio.toFixed(3)}(${topHairPixels}/${topTotalPixels}), templeRatio=${templeRatio.toFixed(3)}(${templeHairPixels}/${templeTotalPixels}), shoulderRatio=${shoulderRatio.toFixed(3)}(${shoulderHairPixels}/${shoulderTotalPixels}), finalRatio=${hairRatio.toFixed(3)}`);
     
+    console.log(`[HairLength] Hair region: top=${hairTop.toFixed(0)}, bottom=${hairBottom.toFixed(0)}, faceLeft=${faceLeft.toFixed(0)}, faceRight=${faceRight.toFixed(0)}, topRatio=${topRatio.toFixed(3)}, templeRatio=${templeRatio.toFixed(3)}, shoulderRatio=${shoulderRatio.toFixed(3)}, finalRatio=${hairRatio.toFixed(3)}`);
     
     // 根据头发像素比例判断长度（调整阈值以更好检测长发）
     // 特殊处理：如果头顶和太阳穴都没有头发但肩膀区域有，说明可能是背景干扰
@@ -1182,6 +1201,7 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
     
     // [FIXED] 2024-07-01: 添加 topRatio > 0 检查，避免将头顶无头发的光头误判为束发
     if (hasTempleHair && isLowHairRatio && !hasBeard && topRatio > 0) {
+      console.log(`[HairLength] [ROLLBACK POINT 26] Bun hairstyle detected: templeRatio=${templeRatio.toFixed(3)}, hairRatio=${hairRatio.toFixed(3)}`);
       // 束发是有一定长度的头发，应该是medium
       return { length: 'medium', confidence: 0.5, shoulderRatio };
     }
@@ -1201,6 +1221,7 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
     // 回滚原因：白人长发样本templeBelowChinRatio=0.516过高，不应触发medium判断
     // 卷发样本：templeRatio=0.363, templeBelowChinRatio=0.013, hairRatio=0.145
     // if (isCurlyHair && hairRatio > 0.10 && hairRatio < 0.25 && templeRatio > 0.35 && templeBelowChinRatio < 0.15 && shoulderRatio > 0.03) {
+    //   console.log(`[HairLength] Curly hair medium detection: hairRatio=${hairRatio.toFixed(3)}, templeRatio=${templeRatio.toFixed(3)}, templeBelowChinRatio=${templeBelowChinRatio.toFixed(3)}, shoulderRatio=${shoulderRatio.toFixed(3)}`);
     //   return { length: 'medium', confidence: 0.6, shoulderRatio };
     // }
     
@@ -1215,6 +1236,7 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
     // 黑人女性卷发：templeRatio=0.363, shoulderRatio=0.000, hairRatio=0.145
     // 策略：当templeRatio>0.35但shoulderRatio<0.05时，说明头发蓬松但不下垂，应该是medium
     if (isCurlyHair && templeRatio > 0.35 && shoulderRatio < 0.05 && !hasBeard) {
+      console.log(`[HairLength] Curly hair medium detection [ROLLBACK POINT 35]: templeRatio=${templeRatio.toFixed(3)}, shoulderRatio=${shoulderRatio.toFixed(3)}, hairRatio=${hairRatio.toFixed(3)}`);
       return { length: 'medium', confidence: 0.6, shoulderRatio };
     }
     
@@ -1230,6 +1252,7 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
     // 第六张照片：templeRatio=0.198, shoulderRatio=0.834, hairRatio < 0.35 → 应该判断为 short
     // 第七张照片：templeRatio=0.117, shoulderRatio=0.968, hairRatio=0.440 > 0.35 → 不会被误判
     if (!hasBeard && templeRatio < 0.25 && shoulderRatio > 0.6 && hairRatio < 0.35) {
+      console.log(`[HairLength] [ROLLBACK POINT 50] Background false positive detected: templeRatio=${templeRatio.toFixed(3)}, shoulderRatio=${shoulderRatio.toFixed(3)}, hairRatio=${hairRatio.toFixed(3)}, treating as short hair`);
       return { length: 'short', confidence: 0.7, shoulderRatio };
     }
     
@@ -1246,6 +1269,7 @@ function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmark
     // 问题照片：hairRatio=0.562，templeRatio=0.404，templeBelowChinRatio=0.707
     //           但 shoulderRatio=1.000 表示背景被误检为头发，应该是短发
     if (!hasBeard && hairRatio >= 0.60 && templeRatio >= 0.35 && templeBelowChinRatio >= 0.5) {  // [ROLLBACK POINT 47 - ISSUE-4]
+      console.log(`[HairLength] Rollback Point 14 - Shoulder-length hair detected: templeRatio=${templeRatio.toFixed(3)}, templeBelowChinRatio=${templeBelowChinRatio.toFixed(3)}`);
       return { length: 'long', confidence: 0.65, shoulderRatio };
     }
     
@@ -1424,7 +1448,9 @@ export async function analyzeFace(
       return defaultResult;
     }
 
+    console.log('[FaceAnalysis] Loading image...');
     const img = await loadImage(imageBase64);
+    console.log('[FaceAnalysis] Image loaded, size:', img.width, 'x', img.height);
 
     // 使用与 useFaceCrop 相同的配置
     const faceDetectorOptions = new faceapi.TinyFaceDetectorOptions({
@@ -1432,6 +1458,7 @@ export async function analyzeFace(
       scoreThreshold: 0.4,  // 折中值，平衡检测灵敏度和准确性
     });
     const detections = await faceapi.detectAllFaces(img, faceDetectorOptions);
+    console.log('[FaceAnalysis] Detections:', detections.length);
 
     // 如果本地检测失败，返回错误
     if (detections.length === 0) {
@@ -1444,6 +1471,7 @@ export async function analyzeFace(
     }
     
     const faceCount = detections.length;
+    console.log(`[FaceAnalysis] Detected ${faceCount} face(s)`);
     
     const detection = detections[0];
     const landmarksResult = await faceapi.detectFaceLandmarks(img);
@@ -1505,6 +1533,7 @@ export async function analyzeFace(
         avgForeheadBrightness > 150 ? 'light' : 
         avgForeheadBrightness > 120 ? 'medium_light' : 
         avgForeheadBrightness > 90 ? 'medium_dark' : 'dark';
+      console.log('[FaceAnalysis] Quick skin tone estimate:', quickSkinTone, '(forehead brightness:', avgForeheadBrightness.toFixed(1), ')');
       
       // 先获取胡须检测结果（包含 beardLength）
       beardResult = detectBeardLocal(imageData, landmarks, pos, quickSkinTone);
@@ -1516,6 +1545,7 @@ export async function analyzeFace(
       hairLengthResult = detectHairLength(imageData, landmarks, beardResult.hasBeard, hairShapeResult.shape, beardLengthForHair);
       bangsResult = detectBangs(imageData);
     }
+    console.log('[FaceAnalysis] Hair length:', hairLengthResult.length, 'Beard:', beardResult.hasBeard);
 
     // 检测面部特征（需要提前检测，用于增强版性别检测）
     const faceShape = detectFaceShape(landmarks);
@@ -1530,6 +1560,7 @@ export async function analyzeFace(
       imageDataForGlasses = ctx.getImageData(0, 0, canvas.width, canvas.height);
     }
     const glassesResult = detectGlasses(landmarks, imageDataForGlasses);
+    console.log('[FaceAnalysis] Local glasses detected:', glassesResult);
     
     // ========== 增强版性别检测 - 使用分层加权策略 ==========
     // 注意：jawline 和 lipShape 必须在调用前已定义
@@ -1544,6 +1575,7 @@ export async function analyzeFace(
       undefined, // hasNecklace
       beardResult.beardLength === 'none' ? undefined : beardResult.beardLength as 'short' | 'medium' | 'long'
     );
+    console.log('[FaceAnalysis] Enhanced gender result:', genderEnhancedResult);
     
     let finalGender: 'male' | 'female' | null = genderEnhancedResult.gender;
     let finalGenderConfidence = genderEnhancedResult.confidence;
@@ -1551,6 +1583,7 @@ export async function analyzeFace(
     // 如果增强版无法确定，使用简化版作为fallback
     if (!finalGender) {
       const genderResult = detectGender(landmarks);
+      console.log('[FaceAnalysis] Fallback gender result:', genderResult);
       finalGender = genderResult.gender;
       finalGenderConfidence = Math.min(genderResult.confidence, 0.7);
     }
@@ -1563,6 +1596,7 @@ export async function analyzeFace(
     
     // [ROLLBACK POINT 7] 诊断日志 - 用于排查 HMR 导致日志丢失问题
     // 回滚：删除 "[DIAGNOSTIC] After detectColorAttributes" 日志行
+    console.log('[FaceAnalysis] [DIAGNOSTIC] After detectColorAttributes, colorAttributes:', JSON.stringify(colorAttributes, null, 2));
     
     // 检测人种
     const faceWidth = Math.abs(pos[16].x - pos[0].x);
@@ -1571,6 +1605,7 @@ export async function analyzeFace(
     const eyeDistance = Math.abs(pos[45].x - pos[36].x);
     
     const ethnicity = detectEthnicity(faceWidth, faceHeight, noseWidth, eyeDistance, colorAttributes.skinTone);
+    console.log('[FaceAnalysis] Ethnicity:', ethnicity);
     
     // 如果是非洲人种，默认没有刘海（非洲人的短发茬发型通常不是传统意义上的刘海）
     if (ethnicity.ethnicity === 'black') {
@@ -1603,8 +1638,28 @@ export async function analyzeFace(
       hasMask: false,
       hasOpenEyes: true
     };
+    console.log('[FaceAnalysis] Accessories:', accessories);
     
     // ===== 输出完整的人脸检测结果（结构化中文）=====
+    console.log('\n🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥');
+    console.log('👤 人脸检测结果 👤              ');
+    console.log('🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥');
+    console.log('\n【基本信息】');
+    console.log(`  👔 性别: ${finalGender || 'unknown'} (置信度: ${finalGenderConfidence.toFixed(2)})`);
+    console.log(`  🌍 人种: ${ethnicity.ethnicity} (置信度: ${ethnicity.confidence.toFixed(2)})`);
+    console.log('\n【肤色属性】');
+    console.log(` 🎨 肤色: ${colorAttributes.skinTone} ${colorAttributes.skinColor}`);
+    console.log(`  💇 头发: ${colorAttributes.hairColor} ${colorAttributes.hairColorHex}`);
+    console.log(`  👁️ 眼睛: ${colorAttributes.eyeColor} ${colorAttributes.eyeColorHex}`);
+    console.log('\n【头发特征】');
+    console.log(` 🔧 发型: ${hairShapeResult.shape} | 长度: ${hairLengthResult.length} | 刘海: ${bangsResult.hasBangs ? bangsResult.style : '无'}`);
+    console.log('\n【面部特征】');
+    console.log(`  ⬜脸型: ${faceShape} | 鼻型: ${noseShape} | 眼型: ${eyeShape}`);
+    console.log(`👄 唇型: ${lipShape} | 下颌: ${jawline}`);
+    console.log('\n【配饰】');
+    console.log(`  🕶️ 眼镜: ${glassesResult.hasGlasses ? glassesResult.glassesType + ' (' + (accessories.glassesFrameColor || '') + ')' : '无'}`);
+    console.log(`🧔 胡须: ${beardResult.hasBeard ? beardResult.beardLength + ' (' + beardResult.beardColor + ')' : '无'}`);
+    console.log('\n🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n');
 
     return {
       faceDetected: true,
