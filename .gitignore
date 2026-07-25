@@ -47,3 +47,4 @@ backups/
 *.ts.hair_backup
 *.tsx.backup
 .nul
+.vscode/
