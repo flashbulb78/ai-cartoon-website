@@ -19,6 +19,8 @@ interface ResultViewerProps {
   onDownload?: () => void;
   /** 重新生成回调 */
   onRegenerate?: () => void;
+  /** 是否显示"Example Output"示例标记（展示示例图时启用） */
+  showExampleLabel?: boolean;
 }
 
 export function ResultViewer({
@@ -26,6 +28,7 @@ export function ResultViewer({
   isLoading,
   onDownload,
   onRegenerate,
+  showExampleLabel = false,
 }: ResultViewerProps) {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
@@ -60,7 +63,7 @@ export function ResultViewer({
         <label className="block text-sm font-semibold text-gray-700">
           Generated Avatar
         </label>
-        {imageUrl && !isLoading && (
+        {imageUrl && !isLoading && !showExampleLabel && (
           <span className="text-xs text-green-600 flex items-center gap-1 font-medium">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -110,6 +113,12 @@ export function ResultViewer({
               alt="Generated cartoon avatar"
               className="w-full h-full object-contain"
             />
+            {/* 示例输出标记（示例图展示时叠加在图片上方） */}
+            {showExampleLabel && (
+              <span className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1 rounded-full bg-gray-900/70 text-white text-xs font-semibold tracking-wide">
+                Example Output
+              </span>
+            )}
             {/* 操作按钮组 */}
             <div className="absolute bottom-4 left-4 right-4">
               <div className="flex gap-2">

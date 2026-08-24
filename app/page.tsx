@@ -34,6 +34,11 @@ import { DEFAULT_STYLE, ERROR_MESSAGES } from '@/lib/constants';
 import { useFaceCrop } from '@/hooks/useFaceCrop';
 import { analyzeFace } from '@/lib/faceAnalysis';
 
+/**
+ * 首页默认展示的示例图（用户生成自己的头像前显示）
+ */
+const SAMPLE_IMAGE_URL = '/samples/example.png';
+
 export default function HomePage() {
   // ========== 认证状态 ==========
   const { user, profile, isLoading: isAuthLoading, decrementCredits, signOut } = useAuth();
@@ -41,7 +46,7 @@ export default function HomePage() {
   // ========== 本地状态 ==========
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedStyle, setSelectedStyle] = useState<CartoonStyle>(DEFAULT_STYLE);
-  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [generatedImage, setGeneratedImage] = useState<string | null>(SAMPLE_IMAGE_URL);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -201,6 +206,8 @@ export default function HomePage() {
       } else {
         const errorMessage = result.error || ERROR_MESSAGES.GENERATION_FAILED;
         setError(errorMessage);
+        // 生成失败时恢复示例图展示
+        setGeneratedImage(SAMPLE_IMAGE_URL);
       }
     } catch (err) {
       console.error('Generation error:', err);
@@ -270,6 +277,9 @@ export default function HomePage() {
           <h2 className="text-3xl sm:text-4xl font-bold text-foreground tracking-tight">
             Create Your Magic Cartoon Avatar
           </h2>
+          <p className="mt-3 text-base sm:text-lg font-bold text-amber-600">
+            ✨ New users get 2 FREE avatar generations after login!
+          </p>
           <p className="mt-3 text-muted-foreground max-w-2xl mx-auto">
             Upload your photo and choose a style to generate a unique cartoon avatar in seconds
           </p>
@@ -503,10 +513,11 @@ export default function HomePage() {
               imageUrl={generatedImage}
               isLoading={isGenerating}
               onDownload={handleDownload}
-              onRegenerate={generatedImage && !isGenerating ? handleRegenerate : undefined}
+              onRegenerate={generatedImage && !isGenerating && generatedImage !== SAMPLE_IMAGE_URL ? handleRegenerate : undefined}
+              showExampleLabel={generatedImage === SAMPLE_IMAGE_URL && !isGenerating}
             />
             {/* Social Media Download Options */}
-            <SocialAvatarDownload imageUrl={generatedImage} baseFilename="magicyoyoyo-avatar" />
+            <SocialAvatarDownload imageUrl={generatedImage !== SAMPLE_IMAGE_URL ? generatedImage : null} baseFilename="magicyoyoyo-avatar" />
           </div>
         </div>
 

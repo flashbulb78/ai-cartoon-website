@@ -89,7 +89,7 @@ export function Header({ isLoggedIn, userName, userAvatar, credits, onLogin, onP
                   transition-all duration-200
                 "
               >
-                Pricing
+                Pricing &amp; Credits
               </button>
             )}
 
