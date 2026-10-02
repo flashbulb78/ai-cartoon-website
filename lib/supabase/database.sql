@@ -129,15 +129,12 @@ CREATE INDEX IF NOT EXISTS idx_app_settings_key ON public.app_settings(key);
 -- 启用RLS（但服务端可绕过）
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 
--- RLS策略：允许服务端读取，不允许普通用户修改
-CREATE POLICY "Service role can read app_settings" ON public.app_settings
-    FOR SELECT USING (true);
-
-CREATE POLICY "Service role can update app_settings" ON public.app_settings
-    FOR UPDATE USING (true);
-
-CREATE POLICY "Service role can insert app_settings" ON public.app_settings
-    FOR INSERT WITH CHECK (true);
+-- RLS策略：仅 service_role 可读写
+-- 注意：必须带 TO service_role。service_role 本身会绕过 RLS，此策略用于显式声明；
+--       若省略 TO 子句，策略默认作用于 public（含 anon/authenticated），
+--       会导致任何人用公开 anon key 即可篡改系统配置。
+CREATE POLICY "Service role can manage app_settings" ON public.app_settings
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- 为app_settings创建更新updated_at的触发器
 CREATE TRIGGER update_app_settings_updated_at
@@ -168,9 +165,10 @@ ALTER TABLE public.pricing_packages ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Anyone can view active packages" ON public.pricing_packages
     FOR SELECT USING (is_active = true);
 
--- 服务端可以修改
+-- 仅服务端（service_role）可以修改定价套餐
+-- 必须限定 TO service_role，否则任何匿名客户端都可改价
 CREATE POLICY "Service role can manage packages" ON public.pricing_packages
-    FOR ALL USING (true);
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- 创建索引
 CREATE INDEX IF NOT EXISTS idx_pricing_packages_active ON public.pricing_packages(is_active, sort_order);
@@ -218,7 +216,7 @@ CREATE POLICY "Users can view own transactions" ON public.transactions
     FOR SELECT USING (auth.uid() = user_id);
 
 CREATE POLICY "Service role can manage transactions" ON public.transactions
-    FOR ALL USING (true);
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- =====================================================
 -- 12. 插入初始设置数据
@@ -251,12 +249,9 @@ CREATE INDEX IF NOT EXISTS idx_style_usage_stats_count ON public.style_usage_sta
 -- 启用RLS
 ALTER TABLE public.style_usage_stats ENABLE ROW LEVEL SECURITY;
 
--- RLS策略：允许服务端所有操作，普通用户只读
-CREATE POLICY "Anyone can read style stats" ON public.style_usage_stats
-    FOR SELECT USING (true);
-
+-- RLS策略：仅服务端可读写（应用通过 service_role 读取统计数据）
 CREATE POLICY "Service role can manage style stats" ON public.style_usage_stats
-    FOR ALL USING (true);
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- 为style_usage_stats创建更新updated_at的触发器
 CREATE TRIGGER update_style_usage_stats_updated_at
@@ -284,8 +279,11 @@ ALTER TABLE public.admins ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Admins can view own record" ON public.admins
     FOR SELECT USING (auth.uid() = user_id);
 
+-- 仅服务端可管理管理员名单
+-- ⚠️ 安全要点：必须限定 TO service_role。若写成 FOR ALL USING (true)，
+--    任何持有公开 anon key 的人都能把自己插入 admins 表从而提权为管理员。
 CREATE POLICY "Service role can manage admins" ON public.admins
-    FOR ALL USING (true);
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- =====================================================
 -- 15. 创建代码修改记录表（code_changes）
@@ -311,13 +309,9 @@ CREATE INDEX IF NOT EXISTS idx_code_changes_rollback ON public.code_changes(is_r
 -- 启用RLS
 ALTER TABLE public.code_changes ENABLE ROW LEVEL SECURITY;
 
--- RLS策略：所有人都可以查看代码修改记录
-CREATE POLICY "Anyone can read code changes" ON public.code_changes
-    FOR SELECT USING (true);
-
--- RLS策略：服务端可以插入和删除记录
+-- RLS策略：仅服务端可读写代码修改记录
 CREATE POLICY "Service role can manage code changes" ON public.code_changes
-    FOR ALL USING (true);
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- =====================================================
 -- 16. 创建用户登录日志表（user_login_logs）
@@ -356,9 +350,10 @@ CREATE POLICY "Admin can view all login logs" ON public.user_login_logs
 CREATE POLICY "Users can view own login logs" ON public.user_login_logs
     FOR SELECT USING (auth.uid() = user_id);
 
--- 服务端可以插入记录
-CREATE POLICY "Service role can insert login logs" ON public.user_login_logs
-    FOR INSERT WITH CHECK (true);
+-- 服务端（service_role）负责写入登录日志
+-- 安全要点：写入统一走服务端 admin client，避免匿名客户端伪造登录日志
+CREATE POLICY "Service role can manage login logs" ON public.user_login_logs
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- =====================================================
 -- 17. 创建用户访问统计表（user_access_stats）
@@ -395,12 +390,9 @@ CREATE POLICY "Admin can view all access stats" ON public.user_access_stats
 CREATE POLICY "Users can view own access stats" ON public.user_access_stats
     FOR SELECT USING (auth.uid() = user_id);
 
--- 服务端可以更新统计
-CREATE POLICY "Service role can update access stats" ON public.user_access_stats
-    FOR UPDATE USING (true);
-
-CREATE POLICY "Service role can insert access stats" ON public.user_access_stats
-    FOR INSERT WITH CHECK (true);
+-- 服务端（service_role）负责维护访问统计
+CREATE POLICY "Service role can manage access stats" ON public.user_access_stats
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- =====================================================
 -- 18. 创建页面访问日志表（user_page_logs）
@@ -437,9 +429,9 @@ CREATE POLICY "Admin can view all page logs" ON public.user_page_logs
 CREATE POLICY "Users can view own page logs" ON public.user_page_logs
     FOR SELECT USING (auth.uid() = user_id);
 
--- 服务端可以插入页面访问记录
-CREATE POLICY "Service role can insert page logs" ON public.user_page_logs
-    FOR INSERT WITH CHECK (true);
+-- 服务端（service_role）负责写入页面访问记录
+CREATE POLICY "Service role can manage page logs" ON public.user_page_logs
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- =====================================================
 -- 19. 创建增加页面访问次数的RPC函数
@@ -492,9 +484,9 @@ CREATE INDEX IF NOT EXISTS idx_webhook_logs_created_at ON public.webhook_logs(cr
 -- 启用 RLS
 ALTER TABLE public.webhook_logs ENABLE ROW LEVEL SECURITY;
 
--- RLS 策略：服务端可以所有操作
+-- RLS 策略：仅服务端可操作
 CREATE POLICY "Service role can manage webhook_logs" ON public.webhook_logs
-    FOR ALL USING (true);
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- 为 webhook_logs 创建 updated_at 触发器
 CREATE TRIGGER update_webhook_logs_updated_at
@@ -521,9 +513,10 @@ CREATE INDEX IF NOT EXISTS idx_rate_limits_identifier ON public.rate_limits(iden
 CREATE INDEX IF NOT EXISTS idx_rate_limits_action ON public.rate_limits(action);
 CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON public.rate_limits(window_start);
 
--- RLS策略：服务端可以所有操作（Service Role可以绕过RLS）
+-- RLS策略：仅服务端可操作
+-- 安全要点：必须限定 TO service_role，否则任何人可删除自己的限流记录绕过限流
 CREATE POLICY "Service role can manage rate_limits" ON public.rate_limits
-    FOR ALL USING (true);
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- 为rate_limits创建updated_at触发器
 CREATE TRIGGER update_rate_limits_updated_at
@@ -670,3 +663,183 @@ BEGIN
     RETURN v_deleted;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- =====================================================
+-- 25. 【安全】profiles 敏感列列级保护
+-- =====================================================
+-- 背景：Supabase 的 RLS 只能限制"行"，无法限制"列"。
+--       策略 "Users can update own profile" 允许用户更新自己整行，
+--       因此用户可用自己的 token 直接 PATCH credits / is_premium，
+--       实现无限免费生成 —— 这会完全绕过服务端的原子扣减逻辑。
+--
+-- 规则：
+--   - 直连数据库（SQL Editor / psql / migration）：无 request.jwt.claims，放行
+--   - service_role（服务端 API）：放行（扣积分、支付回调加积分都走这里）
+--   - anon / authenticated（浏览器端）：禁止修改敏感列，抛异常
+CREATE OR REPLACE FUNCTION public.protect_profile_sensitive_columns()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_claims TEXT;
+    v_role   TEXT;
+BEGIN
+    -- 读取 PostgREST 注入的 JWT claims（直连数据库时为 NULL）
+    BEGIN
+        v_claims := current_setting('request.jwt.claims', true);
+    EXCEPTION WHEN OTHERS THEN
+        v_claims := NULL;
+    END;
+
+    IF v_claims IS NULL OR v_claims = '' THEN
+        RETURN NEW;
+    END IF;
+
+    BEGIN
+        v_role := COALESCE((v_claims::jsonb ->> 'role'), '');
+    EXCEPTION WHEN OTHERS THEN
+        v_role := '';
+    END;
+
+    IF v_role = 'service_role' THEN
+        RETURN NEW;
+    END IF;
+
+    IF NEW.credits IS DISTINCT FROM OLD.credits THEN
+        RAISE EXCEPTION 'credits cannot be modified from the client';
+    END IF;
+
+    IF NEW.is_premium IS DISTINCT FROM OLD.is_premium THEN
+        RAISE EXCEPTION 'is_premium cannot be modified from the client';
+    END IF;
+
+    IF NEW.email IS DISTINCT FROM OLD.email THEN
+        RAISE EXCEPTION 'email cannot be modified from the client';
+    END IF;
+
+    IF NEW.stripe_customer_id IS DISTINCT FROM OLD.stripe_customer_id THEN
+        RAISE EXCEPTION 'stripe_customer_id cannot be modified from the client';
+    END IF;
+
+    IF NEW.stripe_subscription_id IS DISTINCT FROM OLD.stripe_subscription_id THEN
+        RAISE EXCEPTION 'stripe_subscription_id cannot be modified from the client';
+    END IF;
+
+    -- is_admin 列未必存在（当前以 admins 表为准），用 to_jsonb 动态判断
+    IF (to_jsonb(NEW) ->> 'is_admin') IS DISTINCT FROM (to_jsonb(OLD) ->> 'is_admin') THEN
+        RAISE EXCEPTION 'is_admin cannot be modified from the client';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS protect_profile_sensitive_columns ON public.profiles;
+CREATE TRIGGER protect_profile_sensitive_columns
+    BEFORE UPDATE ON public.profiles
+    FOR EACH ROW EXECUTE FUNCTION public.protect_profile_sensitive_columns();
+
+-- =====================================================
+-- 26. 【安全】收紧 SECURITY DEFINER 函数的执行权限
+-- =====================================================
+-- 背景：函数默认对 PUBLIC 授予 EXECUTE，任何人用 anon key 即可通过
+--       PostgREST 的 /rpc/ 端点调用这些高权限函数：
+--       - atomic_deduct_credits：传任意 user_id 即可清空他人积分
+--       - cleanup_expired_rate_limits：传 0 小时可清空全部限流记录，绕过限流
+REVOKE EXECUTE ON FUNCTION public.atomic_deduct_credits(UUID, INTEGER, INTEGER) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.check_rate_limit(TEXT, TEXT, INTEGER, INTEGER) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.cleanup_expired_rate_limits(INTEGER) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.increment_page_views(UUID) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.protect_profile_sensitive_columns() FROM PUBLIC, anon, authenticated;
+
+-- 触发器函数不允许被直接调用
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.update_updated_at() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.update_access_stats_timestamp() FROM PUBLIC, anon, authenticated;
+
+-- 服务端仍需调用
+GRANT EXECUTE ON FUNCTION public.atomic_deduct_credits(UUID, INTEGER, INTEGER) TO service_role;
+GRANT EXECUTE ON FUNCTION public.check_rate_limit(TEXT, TEXT, INTEGER, INTEGER) TO service_role;
+GRANT EXECUTE ON FUNCTION public.cleanup_expired_rate_limits(INTEGER) TO service_role;
+GRANT EXECUTE ON FUNCTION public.increment_page_views(UUID) TO service_role;
+
+-- =====================================================
+-- 27. 新增管理员（必须在此处 / 服务端执行；客户端已无法自助提权）
+-- =====================================================
+-- INSERT INTO public.admins (user_id, role)
+-- SELECT id, 'admin' FROM auth.users WHERE email = 'admin@example.com'
+-- ON CONFLICT (user_id) DO NOTHING;
+
+-- =====================================================
+-- 28. 【支付完整性】积分购买入账函数
+-- =====================================================
+-- 背景：原 webhook 实现存在三个问题：
+--   1. 幂等竞态（先 SELECT 再 INSERT 且忽略插入错误）→ 并发重复投递会重复加分
+--   2. 积分累加用 read-modify-write（读 credits 再写回）→ 并发到账会丢更新
+--   3. 先加分后记账，中途失败会留下不一致状态
+-- 方案：把「幂等判定 + 记账 + 加分」收敛到单个事务内完成，
+--       以 payment_id 为幂等键并依赖 transactions.stripe_session_id 唯一约束。
+CREATE OR REPLACE FUNCTION public.process_credit_purchase(
+    p_payment_id TEXT,      -- Dodo 的 payment_id（幂等键）
+    p_user_id    UUID,
+    p_credits    INTEGER,
+    p_amount     NUMERIC,
+    p_status     TEXT DEFAULT 'completed'
+)
+RETURNS TABLE(
+    success           BOOLEAN,
+    already_processed BOOLEAN,
+    new_credits       INTEGER,
+    error_message     TEXT
+) AS $$
+DECLARE
+    v_new_credits INTEGER;
+BEGIN
+    IF p_credits IS NULL OR p_credits <= 0 THEN
+        RETURN QUERY SELECT FALSE, FALSE, NULL::INTEGER, 'credits must be positive'::TEXT;
+        RETURN;
+    END IF;
+
+    IF p_payment_id IS NULL OR p_payment_id = '' THEN
+        RETURN QUERY SELECT FALSE, FALSE, NULL::INTEGER, 'payment_id is required'::TEXT;
+        RETURN;
+    END IF;
+
+    -- 幂等判定：同一 payment_id 已成功入账则直接返回
+    IF EXISTS (
+        SELECT 1 FROM public.transactions t
+        WHERE t.stripe_session_id = p_payment_id
+          AND t.status = 'completed'
+    ) THEN
+        SELECT p.credits INTO v_new_credits FROM public.profiles p WHERE p.id = p_user_id;
+        RETURN QUERY SELECT TRUE, TRUE, v_new_credits, NULL::TEXT;
+        RETURN;
+    END IF;
+
+    -- 记账（并发撞唯一约束 → 视为已被其他请求处理）
+    BEGIN
+        INSERT INTO public.transactions (user_id, stripe_session_id, amount, credits, type, status)
+        VALUES (p_user_id, p_payment_id, p_amount, p_credits, 'purchase', p_status);
+    EXCEPTION WHEN unique_violation THEN
+        SELECT p.credits INTO v_new_credits FROM public.profiles p WHERE p.id = p_user_id;
+        RETURN QUERY SELECT TRUE, TRUE, v_new_credits, NULL::TEXT;
+        RETURN;
+    END;
+
+    -- 原子加积分（单条 UPDATE，避免 lost update）
+    UPDATE public.profiles
+    SET credits = COALESCE(credits, 0) + p_credits,
+        updated_at = NOW()
+    WHERE id = p_user_id
+    RETURNING credits INTO v_new_credits;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'profile not found for user %', p_user_id;
+    END IF;
+
+    RETURN QUERY SELECT TRUE, FALSE, v_new_credits, NULL::TEXT;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- 权限：可指定任意 user_id 增加积分，仅允许 service_role 调用
+REVOKE EXECUTE ON FUNCTION public.process_credit_purchase(TEXT, UUID, INTEGER, NUMERIC, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.process_credit_purchase(TEXT, UUID, INTEGER, NUMERIC, TEXT) TO service_role;
+

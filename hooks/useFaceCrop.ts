@@ -42,6 +42,9 @@ const MARGIN = 0.2; // 扩大20%边缘以确保完整人脸
 export function useFaceCrop(): UseFaceCropReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // isModelLoaded 需要参与渲染（对外返回值），因此用 state；
+  // ref 仅用于异步流程内部的快速判断，二者在模型加载成功时同步更新。
+  const [isModelLoaded, setIsModelLoaded] = useState(false);
   const isModelLoadedRef = useRef(false);
   const loadAttemptedRef = useRef(false);
 
@@ -69,6 +72,7 @@ export function useFaceCrop(): UseFaceCropReturn {
       await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
 
       isModelLoadedRef.current = true;
+      setIsModelLoaded(true);
       return true;
     } catch (err) {
       console.error('[FaceCrop] Failed to load model:', err);
@@ -83,6 +87,8 @@ export function useFaceCrop(): UseFaceCropReturn {
    * 预加载模型
    */
   useEffect(() => {
+    // loadModels 内部的 setState 均发生在 await 之后（非 effect 同步阶段），
+    // 不会造成级联渲染。该静态规则无法识别异步边界，故在此显式豁免。
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadModels();
   }, [loadModels]);
@@ -194,8 +200,8 @@ export function useFaceCrop(): UseFaceCropReturn {
   return {
     isLoading,
     error,
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    isModelLoaded: isModelLoadedRef.current,
+    // 读取 state（而非 ref），保证模型加载完成后订阅组件能收到更新
+    isModelLoaded,
     cropFace,
     clearError,
   };

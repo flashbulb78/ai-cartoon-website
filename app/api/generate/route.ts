@@ -4,6 +4,8 @@ import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { CartoonStyle, GenerateRequest, ApiResponse, GenerateResponseData } from '@/lib/types';
 import { ERROR_MESSAGES } from '@/lib/constants';
 import { createRateLimiter, RATE_LIMITS } from '@/lib/rateLimit';
+import { readBodyWithLimit, exceedsContentLength, DEFAULT_MAX_BODY_BYTES } from '@/lib/requestLimits';
+import { validateImagePayload } from '@/lib/imageValidation';
 
 /**
  * POST /api/generate
@@ -20,7 +22,7 @@ export async function POST(request: Request) {
   console.log(`[Generate API ${requestId}] Starting request`);
 
   // ========== Rate Limiting 检查 ==========
-  const checkRateLimit = createRateLimiter(RATE_LIMITS.generate);
+  const checkRateLimit = createRateLimiter(RATE_LIMITS.generate, 'generate');
   const rateLimitResponse = await checkRateLimit(request);
   if (rateLimitResponse) {
     console.log(`[Generate API ${requestId}] Rate limit exceeded`);
@@ -114,12 +116,32 @@ export async function POST(request: Request) {
       );
     }
 
-    // ========== 5. 解析请求体 ==========
+    // ========== 5. 解析请求体（带体积上限） ==========
     console.log(`[Generate API ${requestId}] Step 3: Parsing request body`);
+
+    // 5.1 content-length 预检：超大请求在读入前就拒绝
+    if (exceedsContentLength(request.headers, DEFAULT_MAX_BODY_BYTES)) {
+      console.warn(`[Generate API ${requestId}] Request body too large (content-length)`);
+      return NextResponse.json<ApiResponse<GenerateResponseData>>(
+        { success: false, error: 'Request payload too large' },
+        { status: 413 }
+      );
+    }
+
+    // 5.2 流式读取并计数：即使 content-length 缺失/伪造也能兜底
+    const rawBytes = await readBodyWithLimit(request.body, DEFAULT_MAX_BODY_BYTES);
+    if (!rawBytes) {
+      console.warn(`[Generate API ${requestId}] Request body too large (streamed)`);
+      return NextResponse.json<ApiResponse<GenerateResponseData>>(
+        { success: false, error: 'Request payload too large' },
+        { status: 413 }
+      );
+    }
+
     let body: GenerateRequest;
     try {
-      body = await request.json();
-      console.log(`[Generate API ${requestId}] Request body parsed, image length:`, body.image?.length, 'style:', body.style);
+      body = JSON.parse(new TextDecoder().decode(rawBytes));
+      console.log(`[Generate API ${requestId}] Request body parsed, bytes:`, rawBytes.byteLength, 'style:', body.style);
     } catch (parseError) {
       console.error(`[Generate API ${requestId}] JSON parse error:`, parseError);
       return NextResponse.json<ApiResponse<GenerateResponseData>>(
@@ -136,6 +158,20 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    // 6.1 服务端图片校验（前端校验可被绕过，这里必须独立判断）
+    //     校验项：base64 可解码、按文件头确认为 PNG/JPEG/WEBP、解码后体积、分辨率范围
+    const imageCheck = validateImagePayload(body.image);
+    if (!imageCheck.valid) {
+      console.warn(`[Generate API ${requestId}] Image validation failed:`, imageCheck.error);
+      return NextResponse.json<ApiResponse<GenerateResponseData>>(
+        { success: false, error: imageCheck.error || 'Invalid image' },
+        { status: 400 }
+      );
+    }
+    console.log(
+      `[Generate API ${requestId}] Image OK - type: ${imageCheck.mimeType}, bytes: ${imageCheck.byteLength}, size: ${imageCheck.width ?? '?'}x${imageCheck.height ?? '?'}`
+    );
 
     if (!body.style) {
       console.log(`[Generate API ${requestId}] No style provided in request`);

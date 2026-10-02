@@ -4,14 +4,18 @@ const nextConfig: NextConfig = {
   // Ensure trailing slash for proper Vercel routing
   trailingSlash: true,
   
-  // Image optimization configuration
+  // 图片优化配置
+  // 说明：本项目图片均通过原生 <img> 渲染（生成结果是 base64 data URL），并未使用 next/image。
+  // 但 hostname 设为 '**' 会让 /_next/image 变成「可代理任意 https 地址」的入口（SSRF 风险），
+  // 因此这里收紧为白名单。若今后用 next/image 加载外部图片，请在此显式添加对应域名。
   images: {
-    // Allow external images from these domains
     remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '**', // Allow all HTTPS images for generated avatars
-      },
+      { protocol: 'https', hostname: 'minimaxi.com' },
+      { protocol: 'https', hostname: '**.minimaxi.com' },
+      { protocol: 'https', hostname: 'minimax.io' },
+      { protocol: 'https', hostname: '**.minimax.io' },
+      { protocol: 'https', hostname: 'aliyuncs.com' },
+      { protocol: 'https', hostname: '**.aliyuncs.com' },
     ],
   },
   

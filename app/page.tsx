@@ -280,6 +280,17 @@ export default function HomePage() {
           <p className="mt-3 text-base sm:text-lg font-bold text-amber-600">
             ✨ New users get 2 FREE avatar generations after login!
           </p>
+          <div className="mt-4 space-y-1.5">
+            <p className="text-sm sm:text-base text-amber-600">
+              ✨ Perfect for Discord / TikTok / Instagram profile pictures
+            </p>
+            <p className="text-sm sm:text-base text-amber-600">
+              ✨ Export transparent round‑cut PNG avatar
+            </p>
+            <p className="text-sm sm:text-base text-amber-600">
+              ✨ Multiple artistic styles available
+            </p>
+          </div>
           <p className="mt-3 text-muted-foreground max-w-2xl mx-auto">
             Upload your photo and choose a style to generate a unique cartoon avatar in seconds
           </p>

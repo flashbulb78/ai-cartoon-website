@@ -61,6 +61,13 @@ export const RATE_LIMITS = {
     maxRequests: 20,
     message: 'Payment API rate limit exceeded.',
   },
+
+  // 图片代理限制：30请求/分钟（防止该接口被当作免费匿名代理滥用）
+  imageProxy: {
+    windowSeconds: 60,
+    maxRequests: 30,
+    message: 'Image proxy rate limit exceeded. Please try again later.',
+  },
 } as const;
 
 /**
@@ -148,8 +155,13 @@ export function createDatabaseRateLimiter(config: RateLimitConfig, action: strin
 
 /**
  * 兼容性包装器 - 将数据库限流结果转换为 Response 或 null
+ *
+ * 注意：action 为**必填**参数。
+ * 它决定限流计数器在数据库中的分组键（rate_limits.action）。
+ * 早期实现给了默认值 'api'，导致调用方漏传时所有接口共用同一个计数桶，
+ * 各档位（generate 10/min、auth 5/min、payment 20/min）互相污染而失效。
  */
-export function createRateLimiter(config: RateLimitConfig, action: string = 'api') {
+export function createRateLimiter(config: RateLimitConfig, action: string) {
   const dbLimiter = createDatabaseRateLimiter(config, action);
   
   return async function checkRateLimit(request: Request): Promise<Response | undefined> {
@@ -185,31 +197,40 @@ export function createRateLimiter(config: RateLimitConfig, action: string = 'api
 
 /**
  * 获取当前限流状态（用于调试）
- * 注意：在Serverless环境中此函数返回的是单实例状态，不够准确
+ * 注意：在 Serverless 环境中此函数返回的是单实例状态，不够准确
+ *
+ * @param identifier 客户端标识（IP）
+ * @param action     限流动作名（必须与写入时使用的 action 一致）
+ * @param config     该 action 对应的限流配置（决定窗口与上限）
  */
-export async function getRateLimitStatus(identifier: string, action: string) {
+export async function getRateLimitStatus(
+  identifier: string,
+  action: string,
+  config: RateLimitConfig = RATE_LIMITS.api
+) {
   try {
     const supabaseAdmin = createAdminClient();
-    
+
     const { data, error } = await supabaseAdmin
       .from('rate_limits')
       .select('count, window_start')
       .eq('identifier', identifier)
       .eq('action', action)
       .single();
-    
+
     if (error || !data) {
-      return { remaining: 0, resetIn: 0, exceeded: false };
+      return { remaining: config.maxRequests, resetIn: 0, exceeded: false };
     }
-    
+
     const now = new Date();
     const windowStart = new Date(data.window_start);
-    const resetIn = Math.max(0, Math.ceil((windowStart.getTime() + 60000 - now.getTime()) / 1000));
-    
+    const windowMs = config.windowSeconds * 1000;
+    const resetIn = Math.max(0, Math.ceil((windowStart.getTime() + windowMs - now.getTime()) / 1000));
+
     return {
-      remaining: Math.max(0, 60 - data.count),
+      remaining: Math.max(0, config.maxRequests - data.count),
       resetIn,
-      exceeded: data.count >= 60,
+      exceeded: data.count >= config.maxRequests,
     };
   } catch (error) {
     console.error('[RateLimit] Error getting status:', error);

@@ -6,7 +6,7 @@
  * 仅管理员可见，展示登录日志、访问统计
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
@@ -57,6 +57,8 @@ export default function AdminLogsPage() {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // 请求序号：用于丢弃过期响应（快速切换筛选时避免旧结果覆盖新结果）
+  const requestIdRef = useRef(0);
   
   // 筛选条件
   const [startTime, setStartTime] = useState('');
@@ -72,8 +74,9 @@ export default function AdminLogsPage() {
    * 加载日志列表
    */
   const loadLogs = useCallback(async (page: number = 1) => {
-    setIsLoading(true);
-    setError(null);
+    const requestId = ++requestIdRef.current;
+    // loading/error 状态由调用方设置（事件处理器或下方 effect），
+    // 此处不在函数开头同步 setState，避免在 effect 中触发级联渲染
     
     try {
       const params = new URLSearchParams({
@@ -88,18 +91,24 @@ export default function AdminLogsPage() {
       
       const response = await fetch(`/api/admin/login-logs?${params.toString()}`);
       const result = await response.json();
+
+      // 丢弃过期响应
+      if (requestId !== requestIdRef.current) return;
       
       if (result.success) {
         setLogs(result.data.logs);
         setPagination(result.data.pagination);
+        setError(null);
       } else {
         setError(result.error || 'Failed to load logs');
       }
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
       setError('Network error');
       console.error('[AdminLogs] Load error:', err);
     } finally {
-      setIsLoading(false);
+      // 仅当没有更新的请求在进行中时才关闭 loading
+      if (requestId === requestIdRef.current) setIsLoading(false);
     }
   }, [startTime, endTime, ipKeyword, loginTypeFilter, pagination.pageSize]);
   
@@ -182,23 +191,20 @@ export default function AdminLogsPage() {
     }
   }, [authLoading, user, router]);
   
-  // 加载日志
+  // 单一加载 effect：user 就绪或筛选条件变化时，回到第 1 页重新加载。
+  // 说明：
+  //  - 原先有两个 effect 同时触发，挂载时会重复请求两次；现已合并为一个
+  //  - effect 内不再同步 setState（loading 由触发方设置），避免级联渲染
+  //  - 页码切换由分页按钮直接调用 loadLogs 触发，不经过本 effect
   useEffect(() => {
-    if (user) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      loadLogs(pagination.page);
-    }
-    // loadLogs is a stable callback that manages its own state transitions
-  }, [user, pagination.page, loadLogs]);
+    if (!user) return;
+    // loadLogs 内部的 setState 均发生在 fetch 的 await 之后（非 effect 同步阶段），
+    // 不会造成级联渲染。该静态规则无法识别异步边界，故在此显式豁免。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadLogs(1);
+  }, [user, startTime, endTime, ipKeyword, loginTypeFilter, loadLogs]);
   
-  // 筛选变化时重新加载（只依赖筛选条件）
-  useEffect(() => {
-    if (user) {
-      loadLogs(1);
-    }
-    // 不在依赖中包含 isLoading，避免 loadLogs 完成后触发循环
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, startTime, endTime, ipKeyword, loginTypeFilter]);
+  // （筛选变化触发的重载已合并到上面的单一 effect 中）
   
   if (authLoading || !user) {
     return (
@@ -234,7 +240,11 @@ export default function AdminLogsPage() {
               <input
                 type="datetime-local"
                 value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
+                onChange={(e) => {
+                  // 筛选变化 → 显示加载态（在事件处理器中 setState，避免 effect 同步 setState）
+                  setIsLoading(true);
+                  setStartTime(e.target.value);
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -246,7 +256,10 @@ export default function AdminLogsPage() {
               <input
                 type="datetime-local"
                 value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
+                onChange={(e) => {
+                  setIsLoading(true);
+                  setEndTime(e.target.value);
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -258,7 +271,10 @@ export default function AdminLogsPage() {
               <input
                 type="text"
                 value={ipKeyword}
-                onChange={(e) => setIpKeyword(e.target.value)}
+                onChange={(e) => {
+                  setIsLoading(true);
+                  setIpKeyword(e.target.value);
+                }}
                 placeholder="搜索IP..."
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -270,7 +286,10 @@ export default function AdminLogsPage() {
               </label>
               <select
                 value={loginTypeFilter}
-                onChange={(e) => setLoginTypeFilter(e.target.value)}
+                onChange={(e) => {
+                  setIsLoading(true);
+                  setLoginTypeFilter(e.target.value);
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">全部</option>
@@ -285,6 +304,7 @@ export default function AdminLogsPage() {
               <Button
                 variant="secondary"
                 onClick={() => {
+                  setIsLoading(true);
                   setStartTime('');
                   setEndTime('');
                   setIpKeyword('');
@@ -395,7 +415,10 @@ export default function AdminLogsPage() {
                   variant="secondary"
                   size="sm"
                   disabled={pagination.page <= 1}
-                  onClick={() => loadLogs(pagination.page - 1)}
+                  onClick={() => {
+                    setIsLoading(true);
+                    loadLogs(pagination.page - 1);
+                  }}
                 >
                   上一页
                 </Button>
@@ -403,7 +426,10 @@ export default function AdminLogsPage() {
                   variant="secondary"
                   size="sm"
                   disabled={pagination.page >= pagination.totalPages}
-                  onClick={() => loadLogs(pagination.page + 1)}
+                  onClick={() => {
+                    setIsLoading(true);
+                    loadLogs(pagination.page + 1);
+                  }}
                 >
                   下一页
                 </Button>

@@ -42,6 +42,12 @@ export interface DodoCheckoutResponse {
   session_id: string;
   url: string;
   expires_at: string;
+  /**
+   * Dodo 支付 ID
+   * 创建会话时 Dodo 即返回该字段，用于服务端对账与前端轮询支付状态。
+   * 老版本响应可能不含该字段，故为可选。
+   */
+  payment_id?: string;
 }
 
 export interface DodoPayment {
@@ -170,6 +176,8 @@ export async function createCheckoutSession(params: DodoCheckoutRequest): Promis
     session_id: data.session_id,
     url: data.url || data.checkout_url || data.redirect_url || `https://checkout.dodopayments.com?session=${data.session_id}`,
     expires_at: data.expires_at,
+    // Dodo 创建会话时即返回 payment_id，保留它用于服务端对账与状态轮询
+    payment_id: data.payment_id,
   };
 }
 

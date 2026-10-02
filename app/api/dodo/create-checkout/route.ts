@@ -120,6 +120,7 @@ export async function POST(request: NextRequest) {
       data: {
         checkout_url: checkout.url,
         session_id: checkout.session_id,
+        payment_id: checkout.payment_id,
         expires_at: checkout.expires_at,
       },
     });

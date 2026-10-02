@@ -17,24 +17,15 @@ import { getClientIp, getDeviceType, parseGeoLocation } from '@/lib/ip-parse';
 import { createRateLimiter, RATE_LIMITS } from '@/lib/rateLimit';
 
 /**
- * 检查用户是否为管理员
- */
-async function isAdmin(supabase: Awaited<ReturnType<typeof createClient>>, userId: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('admins')
-    .select('user_id')
-    .eq('user_id', userId)
-    .single();
-  
-  return !error && !!data;
-}
-
-/**
  * 记录用户登录日志（异步，不阻塞响应）
+ * 
+ * 安全说明：user_login_logs 的写入策略已收紧为仅 service_role 可用，
+ * 因此这里必须使用 admin client（服务端可信通道）写入。
+ * 调用前已通过 getUser() 校验用户身份，不会写入伪造数据。
  */
 async function recordLogin(userId: string, request: NextRequest, loginType: string): Promise<void> {
   try {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     
     // 提取客户端信息
     const clientIp = getClientIp(request);
@@ -84,7 +75,7 @@ async function recordLogin(userId: string, request: NextRequest, loginType: stri
 async function updateUserAccessStats(
   userId: string, 
   clientIp: string | null,
-  supabase: Awaited<ReturnType<typeof createClient>>
+  supabase: ReturnType<typeof createAdminClient>
 ): Promise<void> {
   try {
     const now = new Date();
@@ -208,7 +199,7 @@ export async function POST(request: NextRequest) {
   // 邮箱登录通过 AuthContext 客户端处理，但可以通过此接口补录日志
   
   // ========== Rate Limiting 检查 ==========
-  const checkRateLimit = createRateLimiter(RATE_LIMITS.auth);
+  const checkRateLimit = createRateLimiter(RATE_LIMITS.auth, 'auth');
   const rateLimitResponse = await checkRateLimit(request);
   if (rateLimitResponse) {
     return rateLimitResponse;

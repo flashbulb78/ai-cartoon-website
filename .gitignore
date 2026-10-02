@@ -40,6 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# 验证脚本的临时编译产物
+.verify-build/
+
 # backups and temporary files
 backups/
 *.backup

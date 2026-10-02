@@ -20,30 +20,36 @@ export async function GET() {
     }
 
     // ========== 2. 验证管理员角色 ==========
-    const adminClient = createAdminClient();
-    const { data: profile, error: profileError } = await adminClient
-      .from('profiles')
-      .select('is_admin, email')
-      .eq('id', user.id)
+    // 统一以 public.admins 表为唯一管理员来源（与其它 admin 接口保持一致），
+    // 避免依赖 profiles.is_admin 列（该列不在 schema 中，且客户端可被篡改）。
+    // 使用带 RLS 的客户端：admins 表的 SELECT 策略仅允许查询自己的记录，
+    // 因此非管理员查询结果为 0 行。
+    const { data: adminRecord, error: adminError } = await supabase
+      .from('admins')
+      .select('user_id, role')
+      .eq('user_id', user.id)
       .single();
 
-    if (profileError) {
-      console.error('[Admin Stats API] Profile fetch error:', profileError);
+    if (adminError && adminError.code !== 'PGRST116') {
+      console.error('[Admin Stats API] Admin check failed:', adminError);
       return NextResponse.json(
         { success: false, error: 'Failed to verify admin status' },
         { status: 500 }
       );
     }
 
-    if (!profile?.is_admin) {
-      console.error('[Admin Stats API] Non-admin user attempted access:', user.id, profile?.email);
+    if (!adminRecord) {
+      console.error('[Admin Stats API] Non-admin user attempted access:', user.id);
       return NextResponse.json(
         { success: false, error: 'Forbidden - Admin access required' },
         { status: 403 }
       );
     }
 
-    console.log('[Admin Stats API] Admin access granted for:', profile.email);
+    console.log('[Admin Stats API] Admin access granted for:', user.id, 'role:', adminRecord.role);
+
+    // 统计数据通过 service_role 读取
+    const adminClient = createAdminClient();
 
     // ========== 3. 获取按风格分组的统计数据 ==========
     const { data: styleStats, error: styleError } = await adminClient
