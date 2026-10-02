@@ -5,6 +5,7 @@
  */
 
 import { CartoonStyle, ApiResponse, GenerateResponseData, FaceAnalysisResult } from './types';
+import { sniffMimeTypeFromBase64 } from './imageValidation';
 
 const MINIMAX_BASE_URL = process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1';
 const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY;
@@ -456,11 +457,16 @@ export async function generateCartoonAvatar(
 
     console.log('[MiniMax] Successfully extracted image, length:', imageUrl.length);
 
+    // 按真实字节嗅探图片类型：MiniMax 实际返回的是 JPEG，
+    // 若统一标成 image/png，会导致下载得到的文件扩展名错误。
+    const imageMime = sniffMimeTypeFromBase64(imageUrl) ?? 'image/png';
+    console.log('[MiniMax] Detected image mime type:', imageMime);
+
     // 9. 返回成功结果
     return {
       success: true,
       data: {
-        imageUrl: `data:image/png;base64,${imageUrl}`,
+        imageUrl: `data:${imageMime};base64,${imageUrl}`,
         processingTime: (responseData?.processing_time || responseData?.processingTime || 0) as number,
       },
     };

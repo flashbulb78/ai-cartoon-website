@@ -102,6 +102,22 @@ export function fileToBase64(file: File): Promise<string> {
 }
 
 /**
+ * 从图片 URL 推断合适的文件扩展名（默认为 png）
+ *
+ * 说明：生成结果是 data URL，其真实编码可能是 JPEG，
+ *       若下载时一律使用 .png，用户拿到的文件扩展名会与实际格式不符。
+ */
+export function getImageExtension(url: string): string {
+  const match = /^data:image\/([a-z0-9.+-]+)/i.exec(url);
+  if (!match) return 'png';
+
+  const subtype = match[1].toLowerCase();
+  if (subtype === 'jpeg' || subtype === 'jpg') return 'jpg';
+  if (subtype === 'webp') return 'webp';
+  return 'png';
+}
+
+/**
  * 下载图片到本地
  * @param url - 图片URL（可以是data URL或网络URL）
  * @param filename - 下载后的文件名

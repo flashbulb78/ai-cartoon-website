@@ -128,6 +128,24 @@ export function validateImagePayload(image: unknown): ImageValidationResult {
 }
 
 /**
+ * 仅解码 base64 的开头若干字符来嗅探真实图片类型
+ *
+ * 用途：MiniMax 返回的 base64 图像数据需要拼成 data URL，
+ *       若前缀 MIME 与实际编码不符（例如把 JPEG 标成 image/png），
+ *       会导致下载得到的文件扩展名错误、部分工具识别异常。
+ */
+export function sniffMimeTypeFromBase64(base64: string): string | null {
+  // 24 个 base64 字符约等于 18 字节，足以覆盖 PNG / JPEG / WEBP 的魔数
+  const head = base64.slice(0, 24);
+
+  try {
+    return sniffMimeType(Buffer.from(head, 'base64'));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 按文件头魔数识别图片类型（不认识则返回 null）
  */
 export function sniffMimeType(bytes: Uint8Array): string | null {

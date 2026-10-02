@@ -28,6 +28,8 @@ if ! npx tsc \
   "$ROOT/lib/requestLimits.ts" \
   "$ROOT/lib/imageValidation.ts" \
   "$ROOT/lib/theme.ts" \
+  "$ROOT/lib/utils.ts" \
+  "$ROOT/lib/constants.ts" \
   --outDir "$BUILD" \
   --module commonjs \
   --target es2022 \

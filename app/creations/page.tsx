@@ -11,7 +11,7 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { createClient } from '@/lib/supabase/client';
 import { GenerationHistory } from '@/lib/types';
-import { downloadImage } from '@/lib/utils';
+import { downloadImage, getImageExtension } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 
 const ITEMS_PER_PAGE = 10;
@@ -78,7 +78,7 @@ export default function CreationsPage() {
   }, []);
 
   const handleDownload = useCallback((imageUrl: string, index: number) => {
-    downloadImage(imageUrl, `cartoon-avatar-${index + 1}.png`);
+    downloadImage(imageUrl, `cartoon-avatar-${index + 1}.${getImageExtension(imageUrl)}`);
   }, []);
 
   const handleDelete = useCallback(async (id: string) => {

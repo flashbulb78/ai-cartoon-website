@@ -12,9 +12,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const { validateImagePayload } = require('./imageValidation');
+const { validateImagePayload, sniffMimeTypeFromBase64 } = require('./imageValidation');
 const { validateProxyTarget, isAllowedHostname, isBlockedHostname, getAllowedHosts } = require('./hostAllowlist');
 const { readBodyWithLimit, exceedsContentLength } = require('./requestLimits');
+const { getImageExtension } = require('./utils');
 
 // 编译产物位于 <repo>/.verify-build/，故项目根目录为其上一级
 const ROOT = path.resolve(__dirname, '..');
@@ -124,6 +125,30 @@ async function main() {
   checkImage('null', null, false);
   checkImage('数字', 12345, false);
   checkImage('只有 data URL 前缀', 'data:image/png;base64,', false);
+
+  console.log('\n--- 1.5 类型嗅探（用于修正 data URL 的 MIME 前缀）---');
+  {
+    const pngB64 = readB64('public/logo_512.png');
+    const jpgB64 = readB64('public/avatar_logo.jpg');
+    ok(
+      'base64 嗅探 PNG',
+      sniffMimeTypeFromBase64(pngB64) === 'image/png',
+      `得到=${sniffMimeTypeFromBase64(pngB64)}`
+    );
+    ok(
+      'base64 嗅探 JPEG',
+      sniffMimeTypeFromBase64(jpgB64) === 'image/jpeg',
+      `得到=${sniffMimeTypeFromBase64(jpgB64)}`
+    );
+    ok('base64 嗅探垃圾数据 → null', sniffMimeTypeFromBase64('QUJDREVGRw==') === null);
+  }
+
+  console.log('\n--- 1.6 下载扩展名推断（生成图实际是 JPEG，不能一律存成 .png）---');
+  ok('data:image/jpeg → jpg', getImageExtension('data:image/jpeg;base64,AAAA') === 'jpg');
+  ok('data:image/png → png', getImageExtension('data:image/png;base64,AAAA') === 'png');
+  ok('data:image/webp → webp', getImageExtension('data:image/webp;base64,AAAA') === 'webp');
+  ok('非 data URL → 默认 png', getImageExtension('https://example.com/a.bin') === 'png');
+  ok('本地路径 → 默认 png', getImageExtension('/samples/example.png') === 'png');
 
   // =====================================================
   console.log('\n########## 二、代理白名单（lib/hostAllowlist.ts）##########\n');

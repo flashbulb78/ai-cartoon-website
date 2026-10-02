@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useState } from 'react';
-import { downloadImage, copyImageToClipboard } from '@/lib/utils';
+import { downloadImage, copyImageToClipboard, getImageExtension } from '@/lib/utils';
 import { SUCCESS_MESSAGES } from '@/lib/constants';
 
 interface ResultViewerProps {
@@ -37,7 +37,7 @@ export function ResultViewer({
    */
   const handleDownload = useCallback(() => {
     if (imageUrl) {
-      downloadImage(imageUrl, `cartoon-avatar-${Date.now()}.png`);
+      downloadImage(imageUrl, `cartoon-avatar-${Date.now()}.${getImageExtension(imageUrl)}`);
       onDownload?.();
     }
   }, [imageUrl, onDownload]);
