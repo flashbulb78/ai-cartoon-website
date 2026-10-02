@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/Button';
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user, profile, signOut, refreshProfile } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const [history, setHistory] = useState<GenerationHistory[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
@@ -89,7 +89,7 @@ export default function ProfilePage() {
       } else {
         setHistory((prev) => prev.filter((h) => h.id !== id));
       }
-    } catch (error) {
+    } catch {
       alert('Failed to delete. Please try again.');
     } finally {
       setIsDeleting(null);

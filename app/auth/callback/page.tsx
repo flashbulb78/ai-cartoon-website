@@ -22,7 +22,6 @@ export default function AuthCallbackPage() {
       // 获取URL中的code和state参数
       const params = new URLSearchParams(window.location.search);
       const code = params.get('code');
-      const state = params.get('state');
 
       if (code) {
         // 交换code获取session

@@ -33,7 +33,7 @@ export default function ForgotPasswordPage() {
       } else {
         setSuccess('Password reset email sent! Please check your inbox and spam folder.');
       }
-    } catch (err) {
+    } catch {
       setError('An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);

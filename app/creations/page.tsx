@@ -97,7 +97,7 @@ export default function CreationsPage() {
         setHistory((prev) => prev.filter((h) => h.id !== id));
         setTotalCount((prev) => prev - 1);
       }
-    } catch (error) {
+    } catch {
       alert('Failed to delete. Please try again.');
     } finally {
       setIsDeleting(null);
@@ -121,7 +121,7 @@ export default function CreationsPage() {
         setHistory([]);
         setTotalCount(0);
       }
-    } catch (error) {
+    } catch {
       alert('Failed to delete all records. Please try again.');
     } finally {
       setIsClearingAll(false);

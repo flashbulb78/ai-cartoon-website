@@ -108,23 +108,18 @@ export function validateEnvironment(): EnvValidationResult {
 }
 
 /**
- * 在开发环境打印环境变量状态
+ * 打印环境变量校验结果（由调用方自行决定在何处调用，如启动检查）
  */
 export function logEnvironmentStatus(): void {
   const result = validateEnvironment();
 
-  
-  if (result.valid) {
-  } else {
-    for (const error of result.errors) {
-    }
+  for (const error of result.errors) {
+    console.error(`[Env] ${error.variable}: ${error.message}`);
   }
 
-  if (result.warnings.length > 0) {
-    for (const warning of result.warnings) {
-    }
+  for (const warning of result.warnings) {
+    console.warn(`[Env] ${warning}`);
   }
-
 }
 
 /**

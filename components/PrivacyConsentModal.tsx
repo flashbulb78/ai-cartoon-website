@@ -14,8 +14,6 @@ interface PrivacyConsentModalProps {
   onAccept: () => void;
   /** Callback when user declines */
   onDecline: () => void;
-  /** Modal title */
-  title?: string;
 }
 
 /**
@@ -136,7 +134,6 @@ export function PrivacyConsentModal({
   isOpen,
   onAccept,
   onDecline,
-  title = 'Privacy Notice',
 }: PrivacyConsentModalProps) {
   const [selectedLang, setSelectedLang] = useState<keyof typeof CONSENT_TEXTS>('en');
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);

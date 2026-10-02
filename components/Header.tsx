@@ -11,8 +11,6 @@ import { ThemeToggle } from '@/components/ThemeToggle';
  */
 
 interface HeaderProps {
-  /** 是否已登录 */
-  isLoggedIn?: boolean;
   /** 用户名（登录后显示） */
   userName?: string;
   /** 用户头像URL */
@@ -27,7 +25,7 @@ interface HeaderProps {
   onSignOut?: () => void;
 }
 
-export function Header({ isLoggedIn, userName, userAvatar, credits, onLogin, onPricing, onSignOut }: HeaderProps) {
+export function Header({ userName, userAvatar, credits, onLogin, onPricing, onSignOut }: HeaderProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 

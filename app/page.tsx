@@ -19,8 +19,7 @@
  * - DodoPayment付费功能（onUpgrade props）
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react';
-import Link from 'next/link';
+import { useState, useCallback } from 'react';
 import { Header } from '@/components/Header';
 import { ImageUploader } from '@/components/ImageUploader';
 import { StyleSelector } from '@/components/StyleSelector';
@@ -53,7 +52,6 @@ export default function HomePage() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showCreditsModal, setShowCreditsModal] = useState(false);
   const [showRegenerateConfirmModal, setShowRegenerateConfirmModal] = useState(false);
-  const [isCropping, setIsCropping] = useState(false);
 
   // ========== 生成参数状态（已上调人脸相似度基准权重）==========
   // face_similarity_strength=0.9, style_strength=0.25, fidelity=0.85
@@ -62,14 +60,10 @@ export default function HomePage() {
   const [styleStrength, setStyleStrength] = useState<number>(0.25);
   const [fidelity, setFidelity] = useState<number>(0.85);
   const [genderForce, setGenderForce] = useState<'male' | 'female' | null>(null);
-  const [detectedGender, setDetectedGender] = useState<'male' | 'female' | null>(null);
   const [faceAnalysis, setFaceAnalysis] = useState<FaceAnalysisResult | null>(null);
 
   // ========== 人脸裁剪 ==========
-  const { cropFace, isLoading: isCropLoading } = useFaceCrop();
-
-  // 防止重复提交的ref
-  const isGeneratingRef = useRef(false);
+  const { cropFace } = useFaceCrop();
 
   // ========== 回调函数 ==========
 
@@ -85,7 +79,6 @@ export default function HomePage() {
       return;
     }
 
-    setIsCropping(true);
     setError(null);
     setSuccess(null);
     setFaceAnalysis(null);
@@ -98,11 +91,6 @@ export default function HomePage() {
       const result = await cropFace(base64);
       if (result.success && result.croppedImage) {
         setSelectedImage(result.croppedImage);
-        
-        // 如果检测到性别，仅记录，不自动设置按钮
-        if (result.gender) {
-          setDetectedGender(result.gender);
-        }
         
         // 全面人脸分析（包含肤色、发色、眼睛颜色、人种、头发特征等）
         // 使用原始图像而非裁剪图像，以便检测喉结等需要完整图像的特征
@@ -124,8 +112,6 @@ export default function HomePage() {
       console.error('[Page] Image change error:', err);
       setError('Failed to process image');
       setSelectedImage(null);
-    } finally {
-      setIsCropping(false);
     }
   }, [cropFace]);
 
@@ -215,7 +201,7 @@ export default function HomePage() {
     } finally {
       setIsGenerating(false);
     }
-  }, [user, profile, isGenerating, selectedImage, selectedStyle, faceSimilarity, styleStrength, fidelity, genderForce, faceAnalysis, cropFace, decrementCredits]);
+  }, [user, profile, isGenerating, selectedImage, selectedStyle, faceSimilarity, styleStrength, fidelity, genderForce, faceAnalysis, decrementCredits]);
 
   /**
    * 重新生成 - 显示确认弹窗
@@ -250,18 +236,10 @@ export default function HomePage() {
     window.location.href = '/pricing';
   }, []);
 
-  /**
-   * 升级按钮（预留DodoPayment）
-   */
-  const handleUpgrade = useCallback(() => {
-    // TODO: 跳转DodoPayment支付页
-  }, []);
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
       {/* 头部 - 已集成用户信息显示 */}
       <Header
-        isLoggedIn={!!user}
         userName={user ? (profile?.username || profile?.full_name || 'User') : undefined}
         userAvatar={profile?.avatar_url}
         credits={profile?.credits}

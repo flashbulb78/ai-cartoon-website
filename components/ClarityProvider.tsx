@@ -19,7 +19,6 @@ export function ClarityProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         console.error('[Clarity] init failed:', error);
       }
-    } else {
     }
   }, []);
 

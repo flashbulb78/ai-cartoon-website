@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 #
-# 安全工具模块回归测试运行器
+# 回归测试运行器
 #
-# 被测模块：lib/imageValidation.ts、lib/hostAllowlist.ts、lib/requestLimits.ts
-# 用法：    bash scripts/verification/run.sh
+# 被测模块：
+#   lib/imageValidation.ts、lib/hostAllowlist.ts、lib/requestLimits.ts、lib/theme.ts
+# 测试文件：
+#   scripts/verification/security-utils.test.js、scripts/verification/theme.test.js
 #
-# 说明：这三个模块是「防止接口被滥用 / 被当作跳板」的关键防线，
-#       被改坏时会静默失效（校验失败即放行），因此改动后请跑一次本脚本。
+# 用法：bash scripts/verification/run.sh
+#
+# 说明：这些都是「静默失效」风险高的模块（校验失败即放行 / 主题被覆盖 / 请求体不设限），
+#       改动相关代码后请跑一次本脚本。
 
 set -uo pipefail
 
@@ -23,6 +27,7 @@ if ! npx tsc \
   "$ROOT/lib/hostAllowlist.ts" \
   "$ROOT/lib/requestLimits.ts" \
   "$ROOT/lib/imageValidation.ts" \
+  "$ROOT/lib/theme.ts" \
   --outDir "$BUILD" \
   --module commonjs \
   --target es2022 \
@@ -35,10 +40,23 @@ then
   exit 1
 fi
 
-echo "[verify] 运行测试..."
 cp "$ROOT/scripts/verification/security-utils.test.js" "$BUILD/"
-node "$BUILD/security-utils.test.js"
-STATUS=$?
+cp "$ROOT/scripts/verification/theme.test.js" "$BUILD/"
+
+STATUS=0
+
+echo "[verify] 运行：安全工具模块测试..."
+node "$BUILD/security-utils.test.js" || STATUS=1
+
+echo "[verify] 运行：主题逻辑测试..."
+node "$BUILD/theme.test.js" || STATUS=1
 
 rm -rf "$BUILD"
+
+if [ "$STATUS" -eq 0 ]; then
+  echo "[verify] ✅ 全部通过"
+else
+  echo "[verify] ❌ 存在失败用例"
+fi
+
 exit "$STATUS"

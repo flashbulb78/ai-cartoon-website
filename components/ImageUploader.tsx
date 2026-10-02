@@ -24,11 +24,13 @@ interface ImageUploaderProps {
 
 export function ImageUploader({ onImageChange, disabled }: ImageUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const { state, handleFileSelect, handleDrop, handleClear, isUploading } = useImageUpload();
-  
+  const { state, handleFileSelect, handleClear, isUploading } = useImageUpload();
+
   // Privacy consent state
+  // 说明：当前每次选择文件都会弹出隐私同意弹窗（合规上更保守）。
+  //      若未来希望"同意一次后本会话不再弹"，需要在 onInputChange/onDrop 中
+  //      判断同意状态（原先存在一个未被使用的 hasConsented 状态，已移除）。
   const [showConsentModal, setShowConsentModal] = useState(false);
-  const [hasConsented, setHasConsented] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   /**
@@ -63,8 +65,7 @@ export function ImageUploader({ onImageChange, disabled }: ImageUploaderProps) {
    */
   const handleConsentAccept = useCallback(async () => {
     setShowConsentModal(false);
-    setHasConsented(true);
-    
+
     if (pendingFile) {
       const base64 = await handleFileSelect(pendingFile);
       if (base64) {
@@ -79,7 +80,6 @@ export function ImageUploader({ onImageChange, disabled }: ImageUploaderProps) {
    */
   const handleConsentDecline = useCallback(() => {
     setShowConsentModal(false);
-    setHasConsented(false);
     setPendingFile(null);
     // Reset input
     if (inputRef.current) {

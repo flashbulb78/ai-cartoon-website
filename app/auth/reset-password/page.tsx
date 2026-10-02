@@ -117,12 +117,12 @@ function ResetPasswordForm() {
           router.push('/auth/login');
         }, 2000);
       }
-    } catch (err) {
+    } catch {
       setError('An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  }, [password, confirmPassword, isPasswordValid, doPasswordsMatch, router]);
+  }, [password, isPasswordValid, doPasswordsMatch, router]);
 
   // 加载状态
   if (isLoading) {

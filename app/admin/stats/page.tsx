@@ -39,14 +39,6 @@ function getStyleDisplayName(styleId: string): string {
   return style ? `${style.emoji} ${style.name}` : styleId;
 }
 
-/**
- * 获取风格emoji
- */
-function getStyleEmoji(styleId: string): string {
-  const style = STYLE_OPTIONS.find(s => s.id === styleId);
-  return style?.emoji || '🎨';
-}
-
 export default function AdminStatsPage() {
   const [stats, setStats] = useState<StatsResponse['data'] | null>(null);
   const [loading, setLoading] = useState(true);

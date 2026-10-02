@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { AuthProvider } from "@/contexts/AuthContext";
-import { ThemeProvider } from "@/components/ThemeProvider";
 import { ClarityProvider } from "@/components/ClarityProvider";
+import { getThemeInitScript } from "@/lib/theme";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -25,15 +25,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    // suppressHydrationWarning：<html> 上的 data-theme/class 会被下面的内联脚本
+    // 在 hydration 之前修改，属于预期行为，需要抑制 React 的属性不一致告警
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/*
+          主题初始化脚本：内联在 <head> 中同步执行，
+          在浏览器首次绘制前就把主题写入 <html>，消除深色用户刷新时的浅色闪烁。
+          逻辑与唯一来源见 lib/theme.ts
+        */}
+        <script dangerouslySetInnerHTML={{ __html: getThemeInitScript() }} />
+      </head>
       <body className="antialiased">
-        {/* Theme provider - initializes theme from localStorage on every page load */}
-        <ThemeProvider>
-          {/* 全局认证Provider */}
-          <AuthProvider>
-            <ClarityProvider>{children}</ClarityProvider>
-          </AuthProvider>
-        </ThemeProvider>
+        {/* 全局认证Provider */}
+        <AuthProvider>
+          <ClarityProvider>{children}</ClarityProvider>
+        </AuthProvider>
       </body>
     </html>
   );

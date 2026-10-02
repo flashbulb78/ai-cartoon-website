@@ -24,10 +24,11 @@ const FACE_SIMILARITY_STRENGTH = parseFloat(process.env.FACE_SIMILARITY_STRENGTH
 const STYLE_STRENGTH = parseFloat(process.env.STYLE_STRENGTH || '0.25');
 
 /**
- * 还原度 (0.4-1.0, 默认0.85)
- * 数值越高越保持原图特征，缩小画面整体差异度
+ * 注意：generateCartoonAvatar 目前接收 fidelity 参数但未使用
+ *（请求体中的 denoising_strength 为固定值）。
+ * 因此首页"Fidelity"滑块暂不生效；如需接入，请在此定义默认值并映射到
+ * 具体的请求字段，并充分测试生成效果后再上线。
  */
-const FIDELITY = parseFloat(process.env.FIDELITY || '0.85');
 
 /**
  * MiniMax风格映射
