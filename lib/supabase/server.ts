@@ -5,6 +5,7 @@
  */
 
 import { createServerClient } from '@supabase/ssr';
+import { createClient as createSupabaseClient, type SupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 
 /**
@@ -32,6 +33,32 @@ export async function createClient(): Promise<ReturnType<typeof createServerClie
             // 在 Server Components 中调用 setAll 可能会有问题，忽略错误
           }
         },
+      },
+    }
+  );
+}
+
+/**
+ * 创建「匿名只读」Supabase 客户端（**不读取 cookies**）
+ *
+ * 用途：在服务端渲染公开数据（如定价套餐）并配合 ISR 缓存时使用。
+ *
+ * 为什么不复用上面的 createClient()：
+ *   它内部调用 cookies()，这会让整个路由转为「动态渲染」，
+ *   从而使 `export const revalidate = N`（ISR）失效 —— 页面就不再是静态的。
+ *   而公开数据本来就与用户身份无关，也不需要读取会话。
+ *
+ * 注意：此客户端使用 anon key，受 RLS 约束，只能读取公开数据。
+ */
+export function createPublicReadClient(): SupabaseClient {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        // 纯服务端公开读取，无需维持会话
+        persistSession: false,
+        autoRefreshToken: false,
       },
     }
   );
