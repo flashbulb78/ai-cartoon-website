@@ -30,6 +30,8 @@ if ! npx tsc \
   "$ROOT/lib/theme.ts" \
   "$ROOT/lib/utils.ts" \
   "$ROOT/lib/constants.ts" \
+  "$ROOT/lib/siteConfig.ts" \
+  "$ROOT/lib/structuredData.ts" \
   --outDir "$BUILD" \
   --module commonjs \
   --target es2022 \

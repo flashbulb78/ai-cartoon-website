@@ -16,6 +16,7 @@ const { validateImagePayload, sniffMimeTypeFromBase64 } = require('./imageValida
 const { validateProxyTarget, isAllowedHostname, isBlockedHostname, getAllowedHosts } = require('./hostAllowlist');
 const { readBodyWithLimit, exceedsContentLength } = require('./requestLimits');
 const { getImageExtension } = require('./utils');
+const { buildSoftwareApplicationSchema, serializeSchema } = require('./structuredData');
 
 // 编译产物位于 <repo>/.verify-build/，故项目根目录为其上一级
 const ROOT = path.resolve(__dirname, '..');
@@ -151,6 +152,37 @@ async function main() {
   ok('data:image/webp → webp', getImageExtension('data:image/webp;base64,AAAA') === 'webp');
   ok('非 data URL → 默认 png', getImageExtension('https://example.com/a.bin') === 'png');
   ok('本地路径 → 默认 png', getImageExtension('/samples/example.png') === 'png');
+
+  console.log('\n--- 1.7 结构化数据 JSON-LD（lib/structuredData.ts）---');
+  {
+    const pkgs = [
+      { id: 'a', price: 4.99, currency: 'USD', credits: 40 },
+      { id: 'b', price: 1.49, currency: 'USD', credits: 8 },
+      { id: 'c', price: 8.99, currency: 'USD', credits: 100 },
+    ];
+    const schema = buildSoftwareApplicationSchema(pkgs);
+
+    ok('@type 为 SoftwareApplication', schema['@type'] === 'SoftwareApplication');
+    ok('offers 使用 AggregateOffer（而非单一 Offer）', schema.offers && schema.offers['@type'] === 'AggregateOffer');
+    ok('lowPrice 自动取最小价', schema.offers && schema.offers.lowPrice === '1.49', `得到=${schema.offers && schema.offers.lowPrice}`);
+    ok('highPrice 自动取最大价', schema.offers && schema.offers.highPrice === '8.99', `得到=${schema.offers && schema.offers.highPrice}`);
+    ok('offerCount 等于套餐数量', schema.offers && schema.offers.offerCount === 3);
+    ok('priceCurrency 取自套餐数据', schema.offers && schema.offers.priceCurrency === 'USD');
+    ok('url 为站点首页绝对地址', schema.url === 'https://www.magicyoyoyo.com/', `得到=${schema.url}`);
+    ok('刻意不含 aggregateRating（无真实评价不得编造）', !('aggregateRating' in schema));
+
+    const emptySchema = buildSoftwareApplicationSchema([]);
+    ok('无套餐时省略 offers（不编造价格）', !('offers' in emptySchema));
+
+    ok(
+      'serializeSchema 转义 < 以防 </script> 提前闭合',
+      serializeSchema({ x: '</script>' }).indexOf('<') === -1
+    );
+    ok(
+      'serializeSchema 输出仍可被 JSON.parse 还原',
+      JSON.parse(serializeSchema(schema))['@type'] === 'SoftwareApplication'
+    );
+  }
 
   // =====================================================
   console.log('\n########## 二、代理白名单（lib/hostAllowlist.ts）##########\n');

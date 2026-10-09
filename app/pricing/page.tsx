@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { createPublicReadClient } from '@/lib/supabase/server';
 import { PricingPackage } from '@/lib/types';
+import { buildSoftwareApplicationSchema, serializeSchema } from '@/lib/structuredData';
 import { PricingClient } from './PricingClient';
 
 /**
@@ -59,5 +60,17 @@ async function fetchPricingPackages(): Promise<PricingPackage[]> {
 export default async function PricingPage() {
   const packages = await fetchPricingPackages();
 
-  return <PricingClient packages={packages} />;
+  // 结构化数据（JSON-LD）：报价由**真实套餐数据**计算得出，
+  // 因此永远与页面展示的价格一致（避免硬编码在调价后变成不准确的报价）。
+  const schema = buildSoftwareApplicationSchema(packages);
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: serializeSchema(schema) }}
+      />
+      <PricingClient packages={packages} />
+    </>
+  );
 }
