@@ -2,9 +2,16 @@ import type { Metadata } from "next";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ClarityProvider } from "@/components/ClarityProvider";
 import { getThemeInitScript } from "@/lib/theme";
+import { getSiteUrlObject } from "@/lib/siteConfig";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  /**
+   * 解析相对 URL（openGraph.images、twitter.images、alternates.canonical 等）的基准地址。
+   * 重要：未配置 metadataBase 时，在这些「需要绝对 URL」的字段里使用相对路径
+   *      会导致**构建报错**（Next.js 官方文档明确说明）。
+   */
+  metadataBase: getSiteUrlObject(),
   title: "Magic Cartoon Avatar - Transform Your Photos into Stunning Art",
   description: "Upload your photo and choose a style to generate unique cartoon avatars using AI. Free credits available!",
   keywords: ["AI", "cartoon", "avatar", "generator", "anime", "photo to cartoon"],

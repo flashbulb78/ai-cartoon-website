@@ -63,7 +63,8 @@ export async function POST(request: NextRequest) {
     const totalCredits = pricingPackage.credits * quantity;
     
     // 4. 构建 DodoPayment 请求
-    let baseUrl = process.env.NEXT_PUBLIC_BASE_URL?.trim();
+    // 去掉可能的结尾斜杠，避免拼出 "https://site.com//checkout/success"
+    let baseUrl = process.env.NEXT_PUBLIC_BASE_URL?.trim().replace(/\/+$/, '');
     console.log('[DodoPayment] Using baseUrl:', JSON.stringify(baseUrl));
     if (!baseUrl) {
       console.error('[DodoPayment] NEXT_PUBLIC_BASE_URL not configured');
