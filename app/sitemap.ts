@@ -18,6 +18,9 @@ import { getSiteUrl, CONTENT_LAST_MODIFIED } from '@/lib/siteConfig';
 export default function sitemap(): MetadataRoute.Sitemap {
   const baseUrl = getSiteUrl();
 
+  // 注意：next.config.ts 启用了 trailingSlash: true，
+  // 因此子路径的规范地址是「带尾部斜杠」的形式（如 /pricing/）。
+  // sitemap 里必须写规范地址，否则提交的每条 URL 都会立刻 308 跳转一次。
   return [
     {
       url: `${baseUrl}/`,
@@ -26,7 +29,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 1,
     },
     {
-      url: `${baseUrl}/pricing`,
+      url: `${baseUrl}/pricing/`,
       lastModified: CONTENT_LAST_MODIFIED,
       changeFrequency: 'monthly',
       priority: 0.8,
