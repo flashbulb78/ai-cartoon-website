@@ -57,4 +57,42 @@ The app uses local face-api.js models for face detection and analysis. No extern
 - Gender detection
 - Ethnicity detection
 - Skin/hair/eye color analysis
+
+## Maintenance Notes
+
+### Static assets (`public/`)
+
+- **`public/google<ID>.html` is a Google Search Console site-verification file.
+  Do not delete it and do not modify its content.** Google periodically re-checks it;
+  if it 404s or its content changes, the property verification is revoked and you lose
+  Search Console data plus the ability to submit sitemaps.
+- Before deleting anything in `public/`, confirm it has zero references across the repo:
+  ```bash
+  grep -rl "<filename>" . --exclude-dir=node_modules --exclude-dir=.next --exclude-dir=.git
+  ```
+  Note: the files under `scripts/verification/` (regression tests) reference a couple of
+  images as **test fixtures** — they look unused by the app, but deleting them breaks tests.
+- `public/samples/example.png` is actually **JPEG-encoded** despite its name. It is used in two
+  places: the homepage sample image (`SAMPLE_IMAGE_URL` in `app/page.tsx`) and the regression
+  tests. Update both if you rename or re-encode it.
+
+### SEO files
+
+- `app/robots.ts` / `app/sitemap.ts` are served at `/robots.txt` and `/sitemap.xml`.
+- The absolute site URL used by those files and by `metadataBase` comes from
+  `NEXT_PUBLIC_BASE_URL` through `lib/siteConfig.ts`. Keep it set to the canonical
+  `https://www.magicyoyoyo.com` so canonical URLs and the sitemap never point at a different host.
+- The project uses `trailingSlash: true`, so canonical URLs of sub-pages end with `/`
+  (e.g. `/pricing/`). Keep sitemap entries consistent with that form.
+
+### Regression tests
+
+```bash
+bash scripts/verification/run.sh
+```
+
+Covers image validation, proxy allow-list, request-size limits and theme logic.
+Run it after touching anything in `lib/imageValidation.ts`, `lib/hostAllowlist.ts`,
+`lib/requestLimits.ts` or `lib/theme.ts`.
+
 - Glasses, beard, and hair detection

@@ -70,18 +70,20 @@ async function main() {
   console.log('\n########## 一、图片校验（lib/imageValidation.ts）##########\n');
   // =====================================================
   console.log('--- 1.1 合法图片必须通过，且尺寸解析正确 ---');
-  checkImage('真实 PNG (logo_512.png)', readB64('public/logo_512.png'), true);
+  // 测试样本刻意使用「项目本身必须保留」的图片，避免为测试额外占用仓库体积：
+  //   apple-touch-icon.png → 真实 PNG（180x180）
+  //   samples/example.png  → 实为 JPEG（1024x1024），恰好也用于验证「按真实字节判定类型」
+  checkImage('真实 PNG (apple-touch-icon.png)', readB64('public/apple-touch-icon.png'), true);
   checkImage('真实 PNG (logo_192.png)', readB64('public/logo_192.png'), true);
-  checkImage('真实 JPEG (avatar_logo.jpg)', readB64('public/avatar_logo.jpg'), true);
-  checkImage('真实 JPEG (avatar_logo_120.jpg)', readB64('public/avatar_logo_120.jpg'), true);
+  checkImage('真实 JPEG (samples/example.png，实为 JPEG)', readB64('public/samples/example.png'), true);
   checkImage(
     'PNG + data URL 前缀（前端实际上送格式）',
-    'data:image/png;base64,' + readB64('public/logo_512.png'),
+    'data:image/png;base64,' + readB64('public/apple-touch-icon.png'),
     true
   );
   checkImage(
     'data URL 声明 png 但内容是 jpeg（不应误杀）',
-    'data:image/png;base64,' + readB64('public/avatar_logo.jpg'),
+    'data:image/png;base64,' + readB64('public/samples/example.png'),
     true
   );
 
@@ -102,20 +104,20 @@ async function main() {
     'too low'
   );
 
-  const png512 = fs.readFileSync(path.join(ROOT, 'public/logo_512.png'));
-  const oversized = Buffer.from(png512);
+  const pngFixture = fs.readFileSync(path.join(ROOT, 'public/apple-touch-icon.png'));
+  const oversized = Buffer.from(pngFixture);
   oversized.writeUInt32BE(99999, 16);
   oversized.writeUInt32BE(99999, 20);
   checkImage('PNG 尺寸 99999x99999（过高）', oversized.toString('base64'), false, 'too large');
 
-  const tooSmall = Buffer.from(png512);
+  const tooSmall = Buffer.from(pngFixture);
   tooSmall.writeUInt32BE(50, 16);
   tooSmall.writeUInt32BE(50, 20);
   checkImage('PNG 尺寸 50x50（过低）', tooSmall.toString('base64'), false, 'too low');
 
   checkImage(
     '超大 payload（约 9MB > 8MB 上限）',
-    readB64('public/logo_512.png') + 'A'.repeat(12 * 1024 * 1024),
+    readB64('public/apple-touch-icon.png') + 'A'.repeat(12 * 1024 * 1024),
     false,
     'too large'
   );
@@ -128,8 +130,8 @@ async function main() {
 
   console.log('\n--- 1.5 类型嗅探（用于修正 data URL 的 MIME 前缀）---');
   {
-    const pngB64 = readB64('public/logo_512.png');
-    const jpgB64 = readB64('public/avatar_logo.jpg');
+    const pngB64 = readB64('public/apple-touch-icon.png');
+    const jpgB64 = readB64('public/samples/example.png');
     ok(
       'base64 嗅探 PNG',
       sniffMimeTypeFromBase64(pngB64) === 'image/png',
