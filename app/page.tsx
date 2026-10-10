@@ -35,8 +35,12 @@ import { analyzeFace } from '@/lib/faceAnalysis';
 
 /**
  * 首页默认展示的示例图（用户生成自己的头像前显示）
+ *
+ * 使用 WebP：原图为 1024×1024 JPEG（文件名却叫 .png）共 246KB，
+ * 而该区域在桌面端实际显示宽度约 528px，属于首页 LCP 元素。
+ * 已用 scripts/optimize-sample-image.js 重采样为 768×768 WebP（约 38KB，减少 84%）。
  */
-const SAMPLE_IMAGE_URL = '/samples/example.png';
+const SAMPLE_IMAGE_URL = '/samples/example.webp';
 
 export default function HomePage() {
   // ========== 认证状态 ==========

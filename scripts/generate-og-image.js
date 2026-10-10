@@ -11,7 +11,7 @@
  *
  * 运行：node scripts/generate-og-image.js
  *
- * 说明：素材取自现有的 logo_192.png 与 samples/example.png（后者实为 JPEG），
+ * 说明：素材取自现有的 logo_192.png 与 samples/example.webp（首页示例图），
  *       文字用 SVG 渲染后再由 sharp 栅格化。
  */
 const fs = require('fs');
@@ -19,7 +19,7 @@ const path = require('path');
 const sharp = require('sharp');
 
 const ROOT = path.resolve(__dirname, '..');
-const AVATAR = path.join(ROOT, 'public/samples/example.png');
+const AVATAR = path.join(ROOT, 'public/samples/example.webp');
 const LOGO = path.join(ROOT, 'public/logo_192.png');
 const OUTPUT = path.join(ROOT, 'public/og.png');
 

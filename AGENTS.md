@@ -15,11 +15,14 @@ This version has breaking changes — APIs, conventions, and file structure may 
   ```
   grep -rl "文件名" . --exclude-dir=node_modules --exclude-dir=.next --exclude-dir=.git
   ```
-  注意 `scripts/verification/` 下的回归测试会引用部分图片作为**测试样本**
-  （当前使用 `apple-touch-icon.png` 与 `samples/example.png`），
-  它们看起来"没被业务代码引用"，但删除会弄坏测试。
-- `public/samples/example.png` **实际是 JPEG 编码**（历史遗留），文件名与内容不一致。
-  它同时被「首页示例图」(`app/page.tsx` 的 `SAMPLE_IMAGE_URL`) 与回归测试引用，
-  如需改名/转码，请同步修改这两处。
+  注意：**上线资源也可能被测试引用**。因此回归测试现在使用
+  `scripts/verification/fixtures/` 下专用的小图片（由
+  `node scripts/generate-test-fixtures.js` 合成，各约数 KB），
+  不再依赖 `public/` 里的业务图片 —— 这样业务图片可以放心删改。
+- `public/samples/example.webp` 是首页默认示例图（768×768，约 38KB），
+  被 `app/page.tsx` 的 `SAMPLE_IMAGE_URL` 与一条回归测试引用。
+  它由 `scripts/optimize-sample-image.js` 一次性生成（原来的 1024×1024、246KB
+  的 PNG/JPEG 已删除）；若需再次优化，请先把原图放回
+  `public/samples/example.png` 再运行该脚本，并同步更新上面两处引用。
 - 图片尺寸参考：`logo_192.png` 显示尺寸为 40px（Header）与 48px（认证页），
   因此**不要把它压到 80px 以下**（retina 屏会发虚，建议 ≥96px）。

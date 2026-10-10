@@ -71,20 +71,22 @@ async function main() {
   console.log('\n########## 一、图片校验（lib/imageValidation.ts）##########\n');
   // =====================================================
   console.log('--- 1.1 合法图片必须通过，且尺寸解析正确 ---');
-  // 测试样本刻意使用「项目本身必须保留」的图片，避免为测试额外占用仓库体积：
-  //   apple-touch-icon.png → 真实 PNG（180x180）
-  //   samples/example.png  → 实为 JPEG（1024x1024），恰好也用于验证「按真实字节判定类型」
-  checkImage('真实 PNG (apple-touch-icon.png)', readB64('public/apple-touch-icon.png'), true);
-  checkImage('真实 PNG (logo_192.png)', readB64('public/logo_192.png'), true);
-  checkImage('真实 JPEG (samples/example.png，实为 JPEG)', readB64('public/samples/example.png'), true);
+  // 测试样本使用 scripts/verification/fixtures/ 下专用的小图片（各约数 KB），
+  // 由 scripts/generate-test-fixtures.js 合成：体积小、内容确定，
+  // 避免为测试而长期保留几百 KB 的业务图片（否则那些图片会"看起来没人用"却被测试依赖）
+  checkImage('真实 PNG (fixtures/fixture.png)', readB64('scripts/verification/fixtures/fixture.png'), true);
+  checkImage('真实 JPEG (fixtures/fixture.jpg)', readB64('scripts/verification/fixtures/fixture.jpg'), true);
+  checkImage('生产资源 PNG (public/logo_192.png)', readB64('public/logo_192.png'), true);
+  // 首页示例图（WebP）：确认线上真实使用的资源本身是合法图片
+  checkImage('首页示例图 (public/samples/example.webp)', readB64('public/samples/example.webp'), true);
   checkImage(
     'PNG + data URL 前缀（前端实际上送格式）',
-    'data:image/png;base64,' + readB64('public/apple-touch-icon.png'),
+    'data:image/png;base64,' + readB64('scripts/verification/fixtures/fixture.png'),
     true
   );
   checkImage(
     'data URL 声明 png 但内容是 jpeg（不应误杀）',
-    'data:image/png;base64,' + readB64('public/samples/example.png'),
+    'data:image/png;base64,' + readB64('scripts/verification/fixtures/fixture.jpg'),
     true
   );
 
@@ -105,7 +107,7 @@ async function main() {
     'too low'
   );
 
-  const pngFixture = fs.readFileSync(path.join(ROOT, 'public/apple-touch-icon.png'));
+  const pngFixture = fs.readFileSync(path.join(ROOT, 'scripts/verification/fixtures/fixture.png'));
   const oversized = Buffer.from(pngFixture);
   oversized.writeUInt32BE(99999, 16);
   oversized.writeUInt32BE(99999, 20);
@@ -118,7 +120,7 @@ async function main() {
 
   checkImage(
     '超大 payload（约 9MB > 8MB 上限）',
-    readB64('public/apple-touch-icon.png') + 'A'.repeat(12 * 1024 * 1024),
+    readB64('scripts/verification/fixtures/fixture.png') + 'A'.repeat(12 * 1024 * 1024),
     false,
     'too large'
   );
@@ -131,8 +133,8 @@ async function main() {
 
   console.log('\n--- 1.5 类型嗅探（用于修正 data URL 的 MIME 前缀）---');
   {
-    const pngB64 = readB64('public/apple-touch-icon.png');
-    const jpgB64 = readB64('public/samples/example.png');
+    const pngB64 = readB64('scripts/verification/fixtures/fixture.png');
+    const jpgB64 = readB64('scripts/verification/fixtures/fixture.jpg');
     ok(
       'base64 嗅探 PNG',
       sniffMimeTypeFromBase64(pngB64) === 'image/png',
@@ -151,7 +153,7 @@ async function main() {
   ok('data:image/png → png', getImageExtension('data:image/png;base64,AAAA') === 'png');
   ok('data:image/webp → webp', getImageExtension('data:image/webp;base64,AAAA') === 'webp');
   ok('非 data URL → 默认 png', getImageExtension('https://example.com/a.bin') === 'png');
-  ok('本地路径 → 默认 png', getImageExtension('/samples/example.png') === 'png');
+  ok('本地路径 → 默认 png', getImageExtension('/samples/example.webp') === 'png');
 
   console.log('\n--- 1.7 结构化数据 JSON-LD（lib/structuredData.ts）---');
   {
