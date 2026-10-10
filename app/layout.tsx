@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ClarityProvider } from "@/components/ClarityProvider";
+import { SiteFooter } from "@/components/SiteFooter";
 import { getThemeInitScript } from "@/lib/theme";
 import { getSiteUrlObject, SITE_NAME, SITE_DESCRIPTION } from "@/lib/siteConfig";
 import "./globals.css";
@@ -84,7 +85,11 @@ export default function RootLayout({
       <body className="antialiased">
         {/* 全局认证Provider */}
         <AuthProvider>
-          <ClarityProvider>{children}</ClarityProvider>
+          <ClarityProvider>
+            {children}
+            {/* 全站页脚：法律信息必须能从每个页面到达（Google OAuth 审核也要求隐私政策可公开访问） */}
+            <SiteFooter />
+          </ClarityProvider>
         </AuthProvider>
       </body>
     </html>

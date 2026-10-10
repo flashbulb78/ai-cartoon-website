@@ -1,7 +1,7 @@
-# 交接文档 — 安全加固 + 技术 SEO + 认证链路修复（2026-10）
+# 交接文档 — 安全加固 + 技术 SEO + 认证链路 + 法律合规（2026-10）
 
-> 本文档覆盖本轮全部改动：**安全修复（P0-P3）→ 工程质量（P4）→ 技术 SEO → 登录/注册链路修复**
-> 共 **13 个提交**，全部已推送到 `origin/main` 并线上验证。
+> 本文档覆盖本轮全部改动：**安全修复（P0-P3）→ 工程质量（P4）→ 技术 SEO → 登录/注册链路修复 → 法律页面与合规告知**
+> 共 **14 个提交**，全部已推送到 `origin/main` 并线上验证。
 >
 > 仓库：https://github.com/flashbulb78/ai-cartoon-website
 > 线上：https://www.magicyoyoyo.com
@@ -90,6 +90,20 @@ curl -sS -o /dev/null -w 'HTTP %{http_code} → %{redirect_url}\n' \
 
 > 📌 配置完成后访问 `/api/auth/callback` 会先经历一次 **308**（本项目启用了 `trailingSlash`，会把 `/api/auth/callback` 转成 `/api/auth/callback/`）。
 > 这是预期行为，查询串与 cookie 都会保留。**不要**为了消除它去改 `redirectTo` 的尾斜杠 —— 那会导致与 Supabase 白名单不匹配。
+
+### 5. 法律页面的 3 项待确认（新增）
+
+`/privacy` 与 `/terms` 已上线，但 `lib/legalConfig.ts` 里有 **3 项需要你人工确认**（源码里都有 `TODO` 注释）：
+
+| 项 | 当前值 | 为什么必须确认 |
+|---|---|---|
+| `SUPPORT_EMAIL` | `support@magicyoyoyo.com` | **必须是真实可收信的邮箱**：隐私政策里的数据访问 / 删除 / 导出请求都发到这里，邮箱失效等于无法履行义务。⚠️ 站内原有联系邮箱是 `support@aicartoon.com`（**不是你的域名**，疑似模板遗留），已统一改成本值；若你确实在用那个邮箱，改回只需动这一行 |
+| `GOVERNING_LAW`、`JURISDICTION_VENUE` | 中性表述 | 建议填你实际主体所在的具体法域（如 `the laws of the People's Republic of China`）。中性表述合法但不够清晰 |
+| `REFUND_WINDOW_DAYS` | `14` | **这是商业决定**：未使用积分的退款窗口。我按欧盟消费者撤回期的常见做法取 14 天 —— 改成 7 / 30 / 0 只改这个数字，条款措辞会自动跟随 |
+
+跑 `bash scripts/verification/run.sh` 时，`legal.test.js` 会把未确认项以 ⚠️ 打印出来（**只提示、不判失败**，不会阻断测试）。
+
+> ⚖️ 这两份文档是**严格按代码实际行为**编写的（每条声明都能在仓库里找到对应实现），但**不构成法律意见**。涉及责任限制、退款与适用法律的条款，上线前建议请律师按你的司法辖区过一遍。
 
 ---
 
@@ -202,6 +216,49 @@ curl -sS -o /dev/null -w 'HTTP %{http_code} → %{redirect_url}\n' \
 | `GET /api/auth/callback?code=invalid_code_test` | → `/auth/login/?error=exchange_failed` ✅（真实 code 交换路径执行并优雅失败） |
 | `GET /auth/callback/?code=abc`（兼容入口） | 307 → `/api/auth/callback/?code=abc`（单跳）✅ |
 
+### 2.8 法律页面与合规告知（新增）
+
+起因：Google OAuth 的 consent screen 要求提供可公开访问的隐私政策 URL；同时站内已在收费，隐私政策与服务条款本来就应当存在。
+
+| 项目 | 实现 | 主要文件 |
+|---|---|---|
+| `/privacy` 隐私政策 | 14 个章节：收集范围、**人脸照片专项说明**、处理目的与法律依据（合同/同意/正当利益/法定义务）、服务商清单、Cookie、保留期限、数据主体权利（含 CCPA 不出售声明）、安全、跨境传输、儿童、变更 | `app/privacy/page.tsx` |
+| `/terms` 服务条款 | 16 个章节：账户、积分与支付（**一次性购买、无订阅**）、退款、内容归属、可接受使用、AI 结果免责、责任限制、适用法律 | `app/terms/page.tsx` |
+| 单一配置来源 | 运营主体、联系邮箱、适用法律、退款窗口、保留条数、生效日期集中一处，页面不硬编码 | `lib/legalConfig.ts` |
+| 全站页脚 | 此前全站**没有页脚、也没有任何链接指向法律页**（页面等于无从到达）。新增页脚并挂到根布局，每个页面都能到达 | `components/SiteFooter.tsx`、`app/layout.tsx` |
+| 收录 | 两页加入 sitemap（带尾斜杠），robots 未禁止；均为**静态预渲染**（HTML 里就有全文） | `app/sitemap.ts` |
+| 同意弹窗接上完整政策 | 弹窗内新增「See the full Privacy Policy」入口（新窗口打开，不打断同意流程） | `components/PrivacyConsentModal.tsx` |
+
+#### ⚠️ 本轮修正的最重要一项：同意弹窗此前存在**失实声明**
+
+弹窗原文（7 种语言）都写着：
+
+- ❌ 「Your image will NOT be stored on our servers after processing」
+- ❌ 「Your image will NOT be shared with third parties」
+
+**但代码实际行为正好相反**：上传的原图与生成结果都会以 base64 入库（`app/api/generate/route.ts`，保留最近 10 条），且照片会发送给 MiniMax（`lib/minimax.ts`）。
+
+失实告知比没有告知更糟 —— 既损害用户信任，也让「同意」失去法律基础。已把 **7 种语言**（en / fr / ms / ja / ko / es / zh）全部改为真实描述，并顺带修正了日语中混入的中文词（面部画像→顔写真、卡通→カートゥーン）与西班牙语的 Spanglish（cartoon→dibujos animados）。
+
+#### 连带修正的站内不一致
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| 支持邮箱 | 价格页写的是 `support@aicartoon.com` —— **不是你的域名**（疑似模板遗留） | 统一为 `lib/legalConfig.ts` 单一来源 |
+| 「Cancel anytime」 | 价格页声称可随时取消，但产品**没有任何订阅**，只有一次性积分包 | 改为 `One-time payment — no subscription`，与服务条款一致 |
+
+#### 新增回归测试（33 项）
+
+`scripts/verification/legal.test.js`，专门防这类「不报错但错了」的问题：
+
+- 法律配置有效性（邮箱格式、日期、退款窗口、保留条数）
+- **失实声明不得被重新引入**（7 种语言的 14 个危险表述逐一检查）
+- 隐私政策必须披露全部实际使用的服务商（Supabase / MiniMax / Dodo / Vercel / Clarity）—— 新增服务商却忘了更新政策会直接失败
+- 条款的关键事实必须与产品一致（生成失败不扣积分、一次性购买、merchant of record 角色）
+- 法律页必须**可被发现**：sitemap 收录 + 页脚链接 + 根布局挂载 + 两页互链
+
+> 测试对「文案内容」的断言会先折叠空白再匹配 —— 页面源码的句子会因排版折行被拆开，直接 `includes()` 会产生假失败（这一点在开发中被真实触发过，已修）。
+
 ---
 
 ## 三、验证方法（可直接复制粘贴）
@@ -213,7 +270,7 @@ cd /Users/superman/Desktop/ai-cartoon-website
 
 npx tsc --noEmit                  # 类型检查
 npx eslint .                      # 应 0 errors（38 个 warning 是历史遗留，不影响）
-bash scripts/verification/run.sh  # 回归测试，应「110 项全通过」
+bash scripts/verification/run.sh  # 回归测试，应「143 项全通过」
 npx next build                    # 生产构建
 ```
 
@@ -223,7 +280,7 @@ npx next build                    # 生产构建
 ### 3.2 线上全路径健康检查
 
 ```bash
-for p in '' 'pricing/' 'og.png' 'robots.txt' 'sitemap.xml' \
+for p in '' 'pricing/' 'privacy/' 'terms/' 'og.png' 'robots.txt' 'sitemap.xml' \
          'google46ed066389c13721.html' 'samples/example.webp' 'logo_192.png'; do
   printf '/%-38s ' "$p"
   curl -s -o /dev/null -m 20 -w 'HTTP %{http_code}\n' "https://www.magicyoyoyo.com/$p"
@@ -384,6 +441,21 @@ grep -rl "文件名" . --exclude-dir=node_modules --exclude-dir=.next --exclude-
 | 支付成功页 | 只有「本地交易记录为 completed」或「Dodo API 确认 succeeded 且归属正确」才显示成功 |
 | 手动补发积分（异常时） | 在 SQL Editor 调 `select * from process_credit_purchase('<payment_id>', '<user_id>', <credits>, <amount>, 'completed');` |
 
+### 5.7 改动数据处理逻辑时，必须同步法律页面
+
+这是**唯一一类「代码没错但会出事」的改动**，请务必遵守：
+
+| 如果你…… | 必须同时更新 |
+|---|---|
+| 新增第三方服务（新模型商、新分析工具、新邮件服务） | `/privacy` 的「Who we share it with」表 + `legal.test.js` 的 `requiredProcessors` 列表 |
+| 改变照片的保存方式或保留条数 | `/privacy` 的「Your photos and avatars」「How long we keep it」+ 弹窗 7 种语言文案 + `lib/legalConfig.ts` 的 `GENERATION_HISTORY_LIMIT` |
+| 修改退款政策 | 只改 `lib/legalConfig.ts` 的 `REFUND_WINDOW_DAYS`，条款措辞会自动跟随 |
+| **上线订阅制** | `/terms` 的「Credits and payments」（现在写的是"一次性购买、无订阅"，届时会变成不实陈述）**以及价格页的 `One-time payment — no subscription`** |
+| 改联系邮箱 | 只改 `lib/legalConfig.ts` 的 `SUPPORT_EMAIL`（页脚、价格页、两个法律页全部跟随） |
+| 删掉 `/privacy` 或 `/terms` | 至少保留可公开访问的隐私政策 —— **Google OAuth 审核要求它存在**，删掉会连带影响登录功能 |
+
+跑 `bash scripts/verification/run.sh` 会在多数情况下失败并指出具体缺哪一项 —— 这是故意的。
+
 ---
 
 ## 六、已知遗留问题（均不影响线上主链路）
@@ -398,7 +470,11 @@ grep -rl "文件名" . --exclude-dir=node_modules --exclude-dir=.next --exclude-
 | 6 | CI 未启用（`.github/workflows/ci.yml` 未能推送） | 无自动化检查 | 见附录 8 |
 | 7 | `public/og.png` 302KB 偏大 | 功能正常，分享抓取稍慢 | 可改输出 JPEG（约 100KB） |
 | 8 | `next.config.ts` 的 `images.remotePatterns` 已收紧为白名单 | 若以后用 `next/image` 加载其他域名的图片会报错 | 按需在白名单里加域名 |
-| 9 | **Google 一键登录尚未启用**（Supabase provider 未配置） | 按钮点击后显示白底裸 JSON 报错页 | 代码侧已全部修复，配置步骤见 **1.4**。⚠️ **在配置完成前，建议先把这个按钮临时隐藏**（`app/auth/login/LoginClient.tsx` 中 Google 按钮那段），避免用户看到报错页 —— 需要我做的话说一声 |
+| 9 | **Google 一键登录尚未启用**（Supabase provider 未配置） | 按钮点击后显示白底裸 JSON 报错页 | 代码侧已全部修复，配置步骤见 **1.4**；consent screen 需要的隐私政策页也已就绪。⚠️ **在配置完成前，建议先把这个按钮临时隐藏**（`app/auth/login/LoginClient.tsx` 中 Google 按钮那段），避免用户看到报错页 —— 需要我做的话说一声 |
+| 10 | **登录日志的保留期限目前只是「声明」** | 隐私政策写了「账号存续期间 + 之后最多 12 个月」，但 `user_login_logs` / `user_access_stats` **没有自动清理任务**，实际是长期保留 | 两个选择：① 加一个定期清理（`pg_cron` 或 Vercel Cron 调用的接口，约 1 小时工作量）；② 把政策措辞改成「为安全目的保留，直至你请求删除」。**当前状态属于声明与实现不一致，建议尽快处理** |
+| 11 | **账户删除 / 数据导出是人工处理** | 隐私政策承诺「收到请求后 30 天内删除」，但系统**没有自助删除账号入口**，只能由你手工在 Supabase 后台删 | 短期靠流程（记得在 30 天内处理邮件）；中期可做「请求删除」按钮 + 后台一键删除。隐私政策已如实写明是「联系我们」，因此不构成问题 |
+| 12 | 法律页面是**按代码行为写实的模板**，非律师出稿 | 责任限制、退款、适用法律三节是按常见做法写的 | 上线前建议律师按你的司法辖区过一遍；另见 **1.5** 的 3 项待确认 |
+| 13 | **`is_premium` 没有购买入口**（订阅制未实现） | UI 与 API 的「无限生成」门禁早已接好，但全仓库没有任何代码把它设为 `true`；`stripe_subscription_id` 字段也一直闲置 | 若要接订阅，**必须同时改服务条款与价格页**（现在都写着"一次性购买、无订阅"），否则会变成不实陈述 —— 见 5.7 |
 
 
 ---
@@ -417,7 +493,7 @@ grep -rl "文件名" . --exclude-dir=node_modules --exclude-dir=.next --exclude-
 | `lib/structuredData.ts` | JSON-LD 结构化数据生成与安全序列化 |
 | `app/robots.ts` / `app/sitemap.ts` | `/robots.txt` 与 `/sitemap.xml` |
 | `app/pricing/PricingClient.tsx` | 定价页的客户端交互部分（数据由服务端传入） |
-| `scripts/verification/` | 回归测试（82 项）与独立测试样本 `fixtures/` |
+| `scripts/verification/` | 回归测试（143 项）与独立测试样本 `fixtures/` |
 | `scripts/generate-og-image.js` | 生成 `public/og.png`（社交分享图） |
 | `scripts/verify-og-image.js` | 用像素统计校验 og 图文字/图片渲染成功 |
 | `scripts/measure-og-text.js` | 测量 og 图文字像素范围（防止与头像重叠） |
@@ -427,6 +503,12 @@ grep -rl "文件名" . --exclude-dir=node_modules --exclude-dir=.next --exclude-
 | `lib/authErrors.ts` | 认证错误码 → 用户文案的单一映射来源（含把 Supabase 自由文本归类成受控码的 `classifyAuthError`） |
 | `app/auth/login/LoginClient.tsx` | 登录/注册表单的客户端部分（原 `page.tsx`，因需服务端读 `searchParams` 而拆分） |
 | `scripts/verification/auth-errors.test.js` | 认证错误映射回归测试（28 项，含"未知取值不得回显"的安全性用例） |
+| `lib/legalConfig.ts` | 法律信息单一配置来源（运营主体、联系邮箱、适用法律、退款窗口、保留条数、生效日期） |
+| `app/privacy/page.tsx` | 隐私政策（14 章节，静态预渲染，含人脸照片专项说明与服务商清单） |
+| `app/terms/page.tsx` | 服务条款（16 章节，含退款、内容归属、可接受使用、责任限制） |
+| `components/LegalSection.tsx` | 两个法律页共用的章节容器 |
+| `components/SiteFooter.tsx` | 全站页脚（法律信息入口；此前全站没有任何指向法律页的链接） |
+| `scripts/verification/legal.test.js` | 法律信息一致性回归测试（33 项，防"页面声明与代码行为脱节"与"失实告知被重新引入"） |
 | `HANDOVER.md` | 本文档 |
 
 ### 删除（本轮）
@@ -557,5 +639,5 @@ jobs:
 
 ---
 
-*文档生成于 2026-10，覆盖自 `f21178e` 起的 **13 个提交**（安全加固 → 工程质量 → 技术 SEO → 认证链路修复）。*
+*文档生成于 2026-10，覆盖自 `f21178e` 起的 **14 个提交**（安全加固 → 工程质量 → 技术 SEO → 认证链路修复 → 法律合规）。*
 

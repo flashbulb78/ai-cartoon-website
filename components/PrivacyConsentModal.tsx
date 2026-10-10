@@ -2,9 +2,24 @@
  * components/PrivacyConsentModal.tsx
  * Privacy consent modal with multi-language support
  * Requires user to actively consent before uploading face images
+ *
+ * ⚠️ 这里的告知文案必须与**实际数据处理行为**保持一致 —— 这是同意有效性的前提：
+ *      • 照片会发送给第三方 AI 服务商（MiniMax）用于生成头像
+ *      • 上传的原图与生成结果都会入库保存，且仅保留最近 10 条
+ *      • 用户可在「My Creations」自行删除单条或全部记录
+ *
+ *    历史问题（已修正）：早期文案写着「图片在处理后不会存储在我们的服务器上」
+ *    「图片不会与第三方共享」，这两条与代码实际行为相反 ——
+ *    原图确实会入库（app/api/generate/route.ts），图片确实会发给 MiniMax（lib/minimax.ts）。
+ *    失实告知比没有告知更糟：既损害用户信任，也让同意失去法律基础。
+ *
+ * 修改数据处理逻辑时，请同步更新本文件 **7 种语言**的文案，并运行
+ *   bash scripts/verification/run.sh
+ * （scripts/verification/legal.test.js 会检查失实声明是否被重新引入）
  */
 
 import { useState, useCallback } from 'react';
+import Link from 'next/link';
 import { Button } from './ui/Button';
 
 interface PrivacyConsentModalProps {
@@ -23,12 +38,12 @@ const CONSENT_TEXTS = {
   en: {
     title: 'Privacy Notice',
     subtitle: 'Your face image will only be used to generate cartoon avatars',
-    statement: `The face image you upload will ONLY be used for generating cartoon avatars with AI technology. We want to be completely transparent:
+    statement: `The face image you upload is processed by AI to generate your cartoon avatar. Here is exactly how it is handled:
 
-• Your image will NOT be stored on our servers after processing
-• Your image will NOT be shared with third parties
-• Your image will NOT be used for any other purposes
-• You can delete your generation history at any time
+• It is sent to our AI provider for the sole purpose of generating your avatar
+• Your upload and the result are saved in your account so you can view them again; we keep only your 10 most recent generations
+• You can delete any generation, or your whole history, at any time
+• We never use your image to identify you, to train AI models or for advertising, and we never sell it
 
 By clicking "I Accept", you confirm that you understand and agree to these terms.`,
     accept: 'I Accept',
@@ -37,12 +52,12 @@ By clicking "I Accept", you confirm that you understand and agree to these terms
   fr: {
     title: 'Avis de confidentialité',
     subtitle: "Votre image de visage sera utilisée uniquement pour générer des avatars cartoon",
-    statement: `L'image de votre visage sera UNIQUEMENT utilisée pour générer des avatars cartoon avec la technologie IA. Nous voulons être complètement transparents:
+    statement: `L'image de votre visage que vous téléchargez est traitée par IA pour générer votre avatar cartoon. Voici exactement comment elle est traitée :
 
-• Votre image ne sera PAS stockée sur nos serveurs après le traitement
-• Votre image ne sera PAS partagée avec des tiers
-• Votre image ne sera PAS utilisée à d'autres fins
-• Vous pouvez supprimer votre historique de génération à tout moment
+• Elle est envoyée à notre fournisseur d'IA dans le seul but de générer votre avatar
+• Votre image et le résultat sont enregistrés dans votre compte pour que vous puissiez les revoir ; nous ne conservons que vos 10 générations les plus récentes
+• Vous pouvez supprimer une génération, ou tout votre historique, à tout moment
+• Nous n'utilisons jamais votre image pour vous identifier, pour entraîner des modèles d'IA ni à des fins publicitaires, et nous ne la vendons jamais
 
 En cliquant sur "J'accepte", vous confirmez que vous comprenez et acceptez ces conditions.`,
     accept: "J'accepte",
@@ -51,12 +66,12 @@ En cliquant sur "J'accepte", vous confirmez que vous comprenez et acceptez ces c
   ms: {
     title: 'Notis Privasi',
     subtitle: 'Imej wajah anda akan hanya digunakan untuk penjanaan avatar kartun',
-    statement: `Imej wajah yang anda muat naik akan HANYA digunakan untuk penjanaan avatar kartun dengan teknologi AI. Kami ingin menjadi telus sepenuhnya:
+    statement: `Imej wajah yang anda muat naik diproses oleh AI untuk menjana avatar kartun anda. Berikut adalah cara ia dikendalikan:
 
-• Imej anda TIDAK akan disimpan di pelayan kami selepas pemprosesan
-• Imej anda TIDAK akan dikongsi dengan pihak ketiga
-• Imej anda TIDAK akan digunakan untuk tujuan lain
-• Anda boleh memadam sejarah penjanaan anda pada bila-bila masa
+• Ia dihantar kepada pembekal AI kami semata-mata untuk menjana avatar anda
+• Muat naik dan hasilnya disimpan dalam akaun anda supaya anda boleh melihatnya semula; kami hanya menyimpan 10 penjanaan terkini anda
+• Anda boleh memadam mana-mana penjanaan, atau seluruh sejarah anda, pada bila-bila masa
+• Kami tidak pernah menggunakan imej anda untuk mengenal pasti anda, untuk melatih model AI atau untuk pengiklanan, dan kami tidak pernah menjualnya
 
 Dengan mengklik "Saya Terima", anda mengesahkan bahawa anda memahami dan bersetuju dengan terma ini.`,
     accept: 'Saya Terima',
@@ -64,13 +79,13 @@ Dengan mengklik "Saya Terima", anda mengesahkan bahawa anda memahami dan bersetu
   },
   ja: {
     title: 'プライバシーに関するお知らせ',
-    subtitle: '面部画像は卡通アバターを生成するためにのみ使用されます',
-    statement: `アップロードした面部画像は、AI技術を使用して卡通アバターを生成するためだけに使用されます。透明性を確保したいと考えています：
+    subtitle: '顔写真はカートゥーンアバターの生成にのみ使用されます',
+    statement: `アップロードされた顔写真は、カートゥーンアバターを生成するためにAIで処理されます。取り扱いは次のとおりです：
 
-• 画像は処理後に当社のサーバーに保存されません
-• 画像は第三者と共有されません
-• 画像は他の目的には使用されません
-• 生成履歴はいつでも削除できます
+• アバターを生成するためだけに、当社のAI提供事業者へ送信されます
+• アップロードした写真と生成結果は、後で見返せるようにアカウントに保存されます。保持するのは直近10件の生成記録のみです
+• 生成記録は、個別にも全件も、いつでも削除できます
+• 画像を本人確認、AIモデルの学習、広告に利用することは一切なく、販売もしません
 
 「同意する」をクリックすることで、これらの条件を理解し、同意することを確認したことになります。`,
     accept: '同意する',
@@ -79,12 +94,12 @@ Dengan mengklik "Saya Terima", anda mengesahkan bahawa anda memahami dan bersetu
   ko: {
     title: '개인정보 보호 고지',
     subtitle: '얼굴 이미지는 카툰 아바타 생성에만 사용됩니다',
-    statement: `업로드하신 얼굴 이미지는 AI 기술로 카툰 아바타를 생성하는 데만 사용됩니다. 완전히 투명하게 안내드립니다:
+    statement: `업로드하신 얼굴 이미지는 카툰 아바타를 생성하기 위해 AI로 처리됩니다. 처리 방식은 다음과 같습니다:
 
-• 이미지는 처리 후 당사 서버에 저장되지 않습니다
-• 이미지는 제3자와 공유되지 않습니다
-• 이미지는 다른 목적으로 사용되지 않습니다
-• 생성 기록은 언제든지 삭제할 수 있습니다
+• 아바타를 생성하기 위한 목적으로만 당사의 AI 제공업체로 전송됩니다
+• 업로드한 이미지와 생성 결과는 나중에 다시 볼 수 있도록 계정에 저장되며, 최근 10건의 생성 기록만 보관합니다
+• 생성 기록은 개별적으로도, 전체를 한 번에 삭제할 수도 있습니다
+• 이미지를 본인 확인, AI 모델 학습, 광고에 사용하지 않으며 판매하지도 않습니다
 
 "동의함"을 클릭하면, 이러한 조건을 이해하고 동의하시는 것입니다.`,
     accept: '동의함',
@@ -92,13 +107,13 @@ Dengan mengklik "Saya Terima", anda mengesahkan bahawa anda memahami dan bersetu
   },
   es: {
     title: 'Aviso de privacidad',
-    subtitle: 'Su imagen de rostro solo se utilizará para generar avatares de cartoon',
-    statement: `La imagen de su rostro que cargue se utilizará ÚNICAMENTE para generar avatares de cartoon con tecnología de IA. Queremos ser completamente transparentes:
+    subtitle: 'Su imagen solo se utilizará para generar avatares de dibujos animados',
+    statement: `La imagen de su rostro que carga se procesa con IA para generar su avatar de dibujos animados. Así es exactamente como se trata:
 
-• Su imagen NO se almacenará en nuestros servidores después del procesamiento
-• Su imagen NO se compartirá con terceros
-• Su imagen NO se utilizará para ningún otro propósito
-• Puede eliminar su historial de generaciones en cualquier momento
+• Se envía a nuestro proveedor de IA con el único fin de generar su avatar
+• Su imagen y el resultado se guardan en su cuenta para que pueda volver a verlos; solo conservamos sus 10 generaciones más recientes
+• Puede eliminar cualquier generación, o todo su historial, en cualquier momento
+• Nunca utilizamos su imagen para identificarle, para entrenar modelos de IA ni con fines publicitarios, y nunca la vendemos
 
 Al hacer clic en "Acepto", confirma que comprende y acepta estos términos.`,
     accept: 'Acepto',
@@ -107,12 +122,12 @@ Al hacer clic en "Acepto", confirma que comprende y acepta estos términos.`,
   zh: {
     title: '隐私声明',
     subtitle: '您的面部图片仅用于生成卡通头像',
-    statement: `您上传的面部图片仅会使用AI技术生成卡通头像。我们希望完全透明：
+    statement: `您上传的面部图片会通过 AI 处理以生成卡通头像。具体处理方式如下：
 
-• 您的图片在处理后不会存储在我们的服务器上
-• 您的图片不会与第三方共享
-• 您的图片不会用于任何其他目的
-• 您可以随时删除您的生成历史
+• 仅为了生成您的头像而发送给我们的 AI 服务商
+• 您上传的图片与生成结果会保存在您的账号中以便您再次查看；我们只保留您最近 10 条生成记录
+• 您可以随时删除单条生成记录，或清空全部历史记录
+• 我们绝不会将您的图片用于身份识别、训练 AI 模型或广告用途，也绝不会出售
 
 点击"我同意"，即表示您确认理解并同意这些条款。`,
     accept: '我同意',
@@ -213,6 +228,21 @@ export function PrivacyConsentModal({
           <div className="prose prose-sm max-w-none text-gray-600 whitespace-pre-line">
             {currentText.statement}
           </div>
+
+          {/* 指向完整隐私政策：同意前的告知不可能涵盖所有细节，
+              这里给出可进一步阅读的入口（新窗口打开，不打断同意流程） */}
+          <p className="mt-4 text-sm text-gray-500">
+            See the full{' '}
+            <Link
+              href="/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline"
+            >
+              Privacy Policy
+            </Link>{' '}
+            for complete details.
+          </p>
           
           {/* Scroll indicator */}
           {!hasScrolledToBottom && (

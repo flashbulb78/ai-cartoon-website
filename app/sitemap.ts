@@ -34,5 +34,20 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: 'monthly',
       priority: 0.8,
     },
+    // 法律页面：公开、无需登录、有实质内容，且需要能被搜索引擎与
+    // Google OAuth 审核（consent screen 要求隐私政策 URL 可公开访问）找到。
+    // 优先级低，但必须收录 —— 否则"隐私政策在哪"只能靠站内页脚发现。
+    {
+      url: `${baseUrl}/privacy/`,
+      lastModified: CONTENT_LAST_MODIFIED,
+      changeFrequency: 'yearly',
+      priority: 0.3,
+    },
+    {
+      url: `${baseUrl}/terms/`,
+      lastModified: CONTENT_LAST_MODIFIED,
+      changeFrequency: 'yearly',
+      priority: 0.3,
+    },
   ];
 }

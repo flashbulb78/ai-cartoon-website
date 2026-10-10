@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { useCallback, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PricingPackage } from '@/lib/types';
+import { SUPPORT_EMAIL } from '@/lib/legalConfig';
 import { Button } from '@/components/ui/Button';
 
 interface PricingClientProps {
@@ -230,11 +231,12 @@ export function PricingClient({ packages }: PricingClientProps) {
             {/* Footer Note */}
             <div className="mt-12 text-center">
               <p className="text-sm text-gray-500">
-                All prices are in USD. Credits never expire. Cancel anytime.
+                All prices are in USD. Credits never expire. One-time payment — no subscription.
               </p>
               <p className="text-xs text-gray-400 mt-2">
                 Need a custom plan?{' '}
-                <a href="mailto:support@aicartoon.com" className="text-blue-500 hover:underline">
+                {/* 邮箱统一取自 lib/legalConfig，避免与隐私政策/页脚出现不同地址 */}
+                <a href={`mailto:${SUPPORT_EMAIL}`} className="text-blue-500 hover:underline">
                   Contact us
                 </a>
               </p>
