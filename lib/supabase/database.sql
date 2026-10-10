@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     username TEXT UNIQUE,
     full_name TEXT,
     avatar_url TEXT,
-    credits INTEGER DEFAULT 2 NOT NULL,  -- 默认4次免费生成次数
+    credits INTEGER DEFAULT 2 NOT NULL,  -- 默认免费生成次数（与 app_settings.initial_credits 一致）
     is_premium BOOLEAN DEFAULT FALSE,
     stripe_customer_id TEXT,
     stripe_subscription_id TEXT,
@@ -62,37 +62,77 @@ CREATE POLICY "Users can delete own generations" ON public.generations
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
-    initial_credits INTEGER := 2;  -- 默认4次免费生成
+    initial_credits INTEGER := 2;   -- 默认赠送次数（权威值见 app_settings.initial_credits）
+    base_username   TEXT;
+    final_username  TEXT;
+    attempt         INTEGER := 0;
 BEGIN
-    -- 尝试从app_settings获取初始点数配置
+    -- 尝试从 app_settings 获取初始点数配置；任何异常都退回默认值，绝不影响注册
     BEGIN
         SELECT (value->>'credits')::INTEGER INTO initial_credits
         FROM public.app_settings
         WHERE key = 'initial_credits';
-        
+
         IF initial_credits IS NULL THEN
-            initial_credits := 2;  -- 默认4次
+            initial_credits := 2;
         END IF;
     EXCEPTION WHEN OTHERS THEN
-        initial_credits := 2;  -- 出错时使用默认值
+        initial_credits := 2;
     END;
-    
-    INSERT INTO public.profiles (id, email, username, full_name, avatar_url, credits)
-    VALUES (
-        NEW.id,
-        NEW.email,
-        COALESCE(
-            NEW.raw_user_meta_data->>'username',
-            split_part(NEW.email, '@', 1),  -- 使用邮箱前缀作为默认用户名
-            'user_' || substr(NEW.id::text, 1, 8)  -- 备用：使用用户ID前8位
-        ),
-        COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name'),
-        NEW.raw_user_meta_data->>'avatar_url',
-        initial_credits
+
+    -- 基准用户名：注册表单提交的 username → 邮箱前缀 → user_<id前8位>
+    -- 注意：OAuth（Google）注册不带 username，会走到邮箱前缀分支
+    base_username := COALESCE(
+        NULLIF(btrim(NEW.raw_user_meta_data->>'username'), ''),
+        NULLIF(split_part(COALESCE(NEW.email, ''), '@', 1), ''),
+        'user_' || substr(NEW.id::text, 1, 8)
     );
+
+    -- 用户名唯一性重试：
+    --   profiles.username 上有 UNIQUE 约束，而邮箱前缀并不唯一
+    --   （john@gmail.com 与 john@outlook.com 会得到同一个前缀）。
+    --   若不重试，unique_violation 会向上冒泡并回滚整个 auth.users 插入，
+    --   用户端表现为注册失败："Database error saving new user"。
+    --   参考迁移：lib/supabase/migrations/20260825_fix_username_collision.sql
+    LOOP
+        attempt := attempt + 1;
+
+        -- 第 1 次 → base；第 2~50 次 → base2 … base50；第 51 次起 → user_<id前8位>
+        IF attempt <= 50 THEN
+            final_username := base_username
+                              || CASE WHEN attempt = 1 THEN '' ELSE attempt::text END;
+        ELSE
+            final_username := 'user_' || substr(NEW.id::text, 1, 8);
+        END IF;
+
+        BEGIN
+            INSERT INTO public.profiles (id, email, username, full_name, avatar_url, credits)
+            VALUES (
+                NEW.id,
+                NEW.email,
+                final_username,
+                COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name'),
+                NEW.raw_user_meta_data->>'avatar_url',
+                initial_credits
+            );
+
+            EXIT;  -- 插入成功，结束重试
+
+        EXCEPTION WHEN unique_violation THEN
+            -- 用户名已被占用 → 换下一个候选值重试；
+            -- 超过兜底次数后放开异常（宁可单次失败也不要无限循环）。
+            IF attempt > 51 THEN
+                RAISE;
+            END IF;
+        END;
+    END LOOP;
+
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+COMMENT ON FUNCTION public.handle_new_user() IS
+    '新建 auth.users 时自动创建 profiles 行。username 冲突时自动追加数字后缀重试，避免注册整体失败；初始积分为 app_settings.initial_credits。';
 
 CREATE OR REPLACE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users

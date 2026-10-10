@@ -29,7 +29,7 @@ import { GenerationParameters } from '@/components/GenerationParameters';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { CartoonStyle, ApiResponse, GenerateResponseData, STYLE_DEFAULT_PARAMS, FaceAnalysisResult } from '@/lib/types';
-import { DEFAULT_STYLE, ERROR_MESSAGES } from '@/lib/constants';
+import { DEFAULT_STYLE, ERROR_MESSAGES, FREE_GENERATIONS_FOR_NEW_USERS } from '@/lib/constants';
 import { useFaceCrop } from '@/hooks/useFaceCrop';
 import { analyzeFace } from '@/lib/faceAnalysis';
 
@@ -260,7 +260,7 @@ export default function HomePage() {
             Create Your Magic Cartoon Avatar
           </h2>
           <p className="mt-3 text-base sm:text-lg font-bold text-amber-600">
-            ✨ New users get 2 FREE avatar generations after login!
+            ✨ New users get {FREE_GENERATIONS_FOR_NEW_USERS} FREE avatar generations after login!
           </p>
           <div className="mt-4 space-y-1.5">
             <p className="text-sm sm:text-base text-amber-600">

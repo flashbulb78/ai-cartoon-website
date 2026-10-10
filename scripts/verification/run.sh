@@ -3,9 +3,12 @@
 # 回归测试运行器
 #
 # 被测模块：
-#   lib/imageValidation.ts、lib/hostAllowlist.ts、lib/requestLimits.ts、lib/theme.ts
+#   lib/imageValidation.ts、lib/hostAllowlist.ts、lib/requestLimits.ts
+#   lib/theme.ts、lib/authErrors.ts
 # 测试文件：
-#   scripts/verification/security-utils.test.js、scripts/verification/theme.test.js
+#   scripts/verification/security-utils.test.js
+#   scripts/verification/theme.test.js
+#   scripts/verification/auth-errors.test.js
 #
 # 用法：bash scripts/verification/run.sh
 #
@@ -32,6 +35,7 @@ if ! npx tsc \
   "$ROOT/lib/constants.ts" \
   "$ROOT/lib/siteConfig.ts" \
   "$ROOT/lib/structuredData.ts" \
+  "$ROOT/lib/authErrors.ts" \
   --outDir "$BUILD" \
   --module commonjs \
   --target es2022 \
@@ -46,6 +50,7 @@ fi
 
 cp "$ROOT/scripts/verification/security-utils.test.js" "$BUILD/"
 cp "$ROOT/scripts/verification/theme.test.js" "$BUILD/"
+cp "$ROOT/scripts/verification/auth-errors.test.js" "$BUILD/"
 
 STATUS=0
 
@@ -54,6 +59,9 @@ node "$BUILD/security-utils.test.js" || STATUS=1
 
 echo "[verify] 运行：主题逻辑测试..."
 node "$BUILD/theme.test.js" || STATUS=1
+
+echo "[verify] 运行：认证错误映射测试..."
+node "$BUILD/auth-errors.test.js" || STATUS=1
 
 rm -rf "$BUILD"
 

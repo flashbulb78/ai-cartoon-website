@@ -1,7 +1,7 @@
-# 交接文档 — 安全加固 + 技术 SEO（2026-10）
+# 交接文档 — 安全加固 + 技术 SEO + 认证链路修复（2026-10）
 
-> 本文档覆盖本轮全部改动：**安全修复（P0-P3）→ 工程质量（P4）→ 技术 SEO**
-> 共 **11 个提交**，全部已推送到 `origin/main` 并线上验证。
+> 本文档覆盖本轮全部改动：**安全修复（P0-P3）→ 工程质量（P4）→ 技术 SEO → 登录/注册链路修复**
+> 共 **13 个提交**，全部已推送到 `origin/main` 并线上验证。
 >
 > 仓库：https://github.com/flashbulb78/ai-cartoon-website
 > 线上：https://www.magicyoyoyo.com
@@ -12,13 +12,15 @@
 
 ### 1. 数据库迁移是否都已执行
 
-三个脚本都在 `lib/supabase/migrations/`（**在 Supabase Dashboard → SQL Editor 里粘贴执行**）：
+五个脚本都在 `lib/supabase/migrations/`（**在 Supabase Dashboard → SQL Editor 里粘贴执行**）：
 
 | 脚本 | 作用 | 状态 |
 |---|---|---|
 | `20260824_security_fix_rls.sql` | 修复 RLS 权限提升、profiles 积分篡改、函数越权 | 已确认执行 ✅（触发器已装） |
 | `20260824_payment_integrity.sql` | 新增 `process_credit_purchase()`（支付幂等入账） | **请确认** |
-| `20260824_security_fix_verify.sql` | **只读自检脚本**（不改数据），输出 8 项 PASS/FAIL | 建议现在跑一次 |
+| `20260825_fix_username_collision.sql` | 🔴 **待执行**：修复 username 唯一约束导致「注册整体失败」 | **请执行**（详见 2.7） |
+| `20260824_security_fix_verify.sql` | **只读自检**（不改数据），输出 8 项 PASS/FAIL | 建议现在跑一次 |
+| `20260825_fix_username_collision_verify.sql` | **只读自检**，输出 5 项 PASS/FAIL | 执行上面的迁移后跑 |
 
 **自检期望结果（8 项全 PASS）：**
 
@@ -54,7 +56,40 @@
 | 6 | 系统深色时点主题切换为「浅色」 | **能切成浅色**（此前是 Bug） |
 | 7 | 刷新任意页面 | 主题**不闪白** |
 | 8 | 后台日志页（F12 → Network） | 首次进入**只发 1 次**请求 |
-| 9 | `user_login_logs` 表 | 登录后有新记录 |
+| 9 | `user_login_logs` 表 | 登录后有新记录（**Google 登录同样要写日志**，见第 4 节） |
+
+### 4. Google 一键登录：当前不可用，需先完成两项后台配置
+
+**现状（已实测确认）**：登录/注册页的「Continue with Google」按钮点击后，浏览器会跳到 Supabase 授权端点并收到一段**裸 JSON 报错**（白底页面）：
+
+```json
+{"code":400,"error_code":"validation_failed","msg":"Unsupported provider: provider is not enabled"}
+```
+
+原因：**Supabase 项目里没有启用 Google provider**（GitHub 同样未启用）。代码侧的全部接线问题已在本轮修复（见 2.7），但**必须由你在两个后台完成配置才能生效**：
+
+| 步骤 | 位置 | 要填什么 |
+|---|---|---|
+| 1 | Google Cloud Console → APIs & Services → Credentials → 新建 **OAuth client ID（Web application）** | Authorized JavaScript origins：`https://www.magicyoyoyo.com`、`http://localhost:3000`<br>Authorized redirect URIs：**`https://lfxaeavvslnajgnyfvnz.supabase.co/auth/v1/callback`**（⚠️ 是 **Supabase** 的地址，不是你站的） |
+| 2 | 同上 → **OAuth consent screen** | 填 App name、Support email、Privacy policy URL，然后 **Publish app**（留在 Testing 时只有 100 个测试账号能登录，其他人会看到 "Access blocked"，看起来仍然是坏的） |
+| 3 | Supabase → Authentication → **Providers → Google** | 粘贴上一步的 Client ID / Client Secret → 打开 Enabled → Save |
+| 4 | Supabase → Authentication → **URL Configuration** | Site URL：`https://www.magicyoyoyo.com`<br>Redirect URLs 加 4 条：<br>`https://www.magicyoyoyo.com/api/auth/callback`<br>`https://www.magicyoyoyo.com/auth/reset-password`<br>`http://localhost:3000/api/auth/callback`<br>`http://localhost:3000/auth/reset-password` |
+
+> ⚠️ **Redirect URLs 必须与代码里发出的 `redirectTo` 完全一致**：`/api/auth/callback`，**不带**尾斜杠。
+> 不匹配时 Supabase 会忽略它并回落到 Site URL，表现是「授权完成后回到首页但没有登录」。
+
+**配置完成的验收（一条命令，不需要登录、不消耗额度）：**
+
+```bash
+curl -sS -o /dev/null -w 'HTTP %{http_code} → %{redirect_url}\n' \
+  "https://lfxaeavvslnajgnyfvnz.supabase.co/auth/v1/authorize?provider=google&redirect_to=https%3A%2F%2Fwww.magicyoyoyo.com%2Fapi%2Fauth%2Fcallback"
+```
+
+- 配置**前**：`HTTP 400`（就是上面那段 JSON）
+- 配置**后**：`HTTP 302` → `Location: https://accounts.google.com/o/oauth2/v2/auth?...` ✅
+
+> 📌 配置完成后访问 `/api/auth/callback` 会先经历一次 **308**（本项目启用了 `trailingSlash`，会把 `/api/auth/callback` 转成 `/api/auth/callback/`）。
+> 这是预期行为，查询串与 cookie 都会保留。**不要**为了消除它去改 `redirectTo` 的尾斜杠 —— 那会导致与 Supabase 白名单不匹配。
 
 ---
 
@@ -124,8 +159,48 @@
 | og 分享图 | `public/og.png`（1200×630）+ `openGraph`/`twitter` 完整配置 | `scripts/generate-og-image.js` |
 | 首页 LCP 图片 | 246KB JPEG → **38KB WebP**（768px） | `scripts/optimize-sample-image.js` |
 | 清理死资源 | 删除 11 个 0 引用文件（约 520KB） | — |
-| 回归测试 | 82 项（`bash scripts/verification/run.sh`） | `scripts/verification/` |
+| 回归测试 | **110 项**（`bash scripts/verification/run.sh`） | `scripts/verification/` |
 
+### 2.7 认证链路修复（登录 / 注册）
+
+起因：用户反馈「注册页的 Continue with Google 按钮不起作用」。排查后发现 **10 个问题**，其中只有 1 个（provider 未启用）需要后台配置，其余全部在代码里：
+
+| # | 问题 | 后果 | 修复 | 主要文件 |
+|---|---|---|---|---|
+| 1 | **Supabase 未启用 Google provider**（实测 HTTP 400） | 点按钮看到白底裸 JSON 报错页 —— 比"没有这个按钮"更伤信誉 | 代码已就绪；需你在两个后台配置（见 **1.4**） | — |
+| 2 | **登录页完全不读 `?error=`** | 任何 OAuth 失败在用户眼里都是"按钮没反应"（典型静默失效） | 新增受控错误码映射模块；登录页改由 Server Component 读 `searchParams` 渲染提示 | `lib/authErrors.ts`、`app/auth/login/page.tsx`、`app/auth/login/LoginClient.tsx` |
+| 3 | Google 回调走**客户端页面**，服务端回调（写登录日志的那个）**从未被调用** | Google 登录**永远不写日志**；后台日志页的「Google」筛选永远是空的 | `redirectTo` 改指 `/api/auth/callback`；`/auth/callback` 退化为只做转发的兼容入口（全站单条处理链路） | `contexts/AuthContext.tsx`、`app/auth/callback/page.tsx` |
+| 4 | 用 `state?.includes('google')` 判断登录方式 | Supabase 的 `state` 是随机串、不含 provider 名 —— 即便接上也会把 Google 记成 `email` | 改用 `user.app_metadata.provider` | `app/api/auth/callback/route.ts` |
+| 5 | 登录日志用**游离 Promise** 写入（未 await） | Serverless 响应返回后运行环境冻结，写入被静默丢弃 | 改为 `await`（`recordLogin` 内部已吞掉异常，不影响登录） | 同上 |
+| 6 | 「邮箱已注册过」时把 Supabase 英文原文抛给用户 | 用户看不懂，也不知道该怎么办 | 关键词识别 → `email_already_registered` → 引导改用邮箱密码登录；**URL 中只放受控错误码** | `lib/authErrors.ts`、`app/api/auth/callback/route.ts` |
+| 7 | **`username` 唯一约束会让注册整体失败** | `john@gmail.com` 与 `john@outlook.com` 撞前缀 → `unique_violation` 冒泡 → `auth.users` 插入回滚 → 用户看到 "Database error saving new user"。**启用 Google 后会显著放大** | 触发器内捕获冲突，按 `base`/`base2`…重试，兜底 `user_<id前8位>`；同时补 `SET search_path = public` | `lib/supabase/migrations/20260825_fix_username_collision.sql`、`lib/supabase/database.sql` |
+| 8 | 免费次数口径不一致 | 登录页写 **5 次**、首页写 2 次、数据库给 2 次 → 「宣传多于实际」的信任落差 | 统一到数据库口径，并抽成 `FREE_GENERATIONS_FOR_NEW_USERS` 单一来源 | `lib/constants.ts`、`app/page.tsx`、`app/auth/login/LoginClient.tsx` |
+| 9 | `login_type` 直接采用客户端上报值 | 任意字符串都会被写入日志并在后台展示 | 白名单校验（`email`/`google`/`github`/`guest`） | `app/api/auth/callback/route.ts` |
+| 10 | 缺少认证链路的回归保护 | 上述修复容易被后续改动悄悄改回 | 新增 28 项测试（含"未知取值不得回显"的安全性用例） | `scripts/verification/auth-errors.test.js`、`run.sh` |
+
+
+**设计要点（为什么这么做）**
+
+| 决定 | 原因 |
+|---|---|
+| 错误码必须**受控**（取值为 `AUTH_ERROR_MESSAGES` 的键） | Supabase 返回的 `error_description` 是自由文本：直接展示会泄露内部细节，直接放进 URL 还会形成回显风险。所有外部错误先经 `classifyAuthError()` 归类，URL 里只出现我们自己定义的取值 |
+| 登录页拆成 `page.tsx` + `LoginClient.tsx` | 本版本 Next.js 中 `useSearchParams` 会让客户端组件树退化为 CSR（官方文档明确说明），官方推荐由 Server Component 读 `searchParams` prop 再传下去。与 `app/pricing/` 的拆法一致 |
+| 用 `key` 触发重挂载，**不用** `useEffect` + `setState` | 在 effect 里 setState 会触发级联渲染（React 19 对应 lint 规则直接报 error）。用 `key` 更符合 React 惯例，且能保证错误提示与 URL 始终一致 |
+| `redirectTo` **不带**尾斜杠 | Supabase 白名单是精确匹配，带尾斜杠有落空并回落到 Site URL 的风险。多出的一次 308 无害（已实测查询串与 cookie 均保留） |
+
+**已完成的端到端验证（本地 dev server 实测，非推测）**
+
+| 请求 | 结果 |
+|---|---|
+| `GET /auth/login/` | 200，**不出现**任何错误提示 ✅ |
+| `GET /auth/login/?error=access_denied` | 200，渲染「Google sign-in was cancelled」✅ |
+| `GET /auth/login/?error=email_already_registered` | 200，渲染引导文案 ✅ |
+| `GET /auth/login/?error=<script>alert(1)</script>` | 200，显示兜底文案；**原值未被渲染成可执行内容**（RSC 数据流中 `<`/`>` 已转义为 `\u003c`/`\u003e`）✅ |
+| `GET /api/auth/callback?error=access_denied&error_description=User+denied+access` | → `/auth/login/?error=access_denied` ✅ |
+| `GET /api/auth/callback?error=server_error&error_description=User+already+registered` | → `/auth/login/?error=email_already_registered` ✅（关键词识别在真实请求路径上生效） |
+| `GET /api/auth/callback`（无 code） | → `/auth/login/?error=missing_code` ✅ |
+| `GET /api/auth/callback?code=invalid_code_test` | → `/auth/login/?error=exchange_failed` ✅（真实 code 交换路径执行并优雅失败） |
+| `GET /auth/callback/?code=abc`（兼容入口） | 307 → `/api/auth/callback/?code=abc`（单跳）✅ |
 
 ---
 
@@ -138,7 +213,7 @@ cd /Users/superman/Desktop/ai-cartoon-website
 
 npx tsc --noEmit                  # 类型检查
 npx eslint .                      # 应 0 errors（38 个 warning 是历史遗留，不影响）
-bash scripts/verification/run.sh  # 回归测试，应「82 项全通过」
+bash scripts/verification/run.sh  # 回归测试，应「110 项全通过」
 npx next build                    # 生产构建
 ```
 
@@ -186,7 +261,26 @@ curl -s https://www.magicyoyoyo.com/sitemap.xml | grep '<loc>'
 
 ### 3.5 数据库自检
 
-在 Supabase SQL Editor 执行 `lib/supabase/migrations/20260824_security_fix_verify.sql`（**只读，不改数据**），期望 **8 项全 PASS**。
+在 Supabase SQL Editor 执行（两者都是**只读、不改数据**）：
+
+| 脚本 | 期望结果 |
+|---|---|
+| `20260824_security_fix_verify.sql` | **8 项全 PASS** |
+| `20260825_fix_username_collision_verify.sql` | **4 项 PASS**；第 5 项是信息项（仅提示线上是否存在重复邮箱前缀），不影响判定 |
+
+### 3.6 Google 登录状态（一条命令，不需要登录、不消耗额度）
+
+```bash
+curl -sS -o /dev/null -w 'HTTP %{http_code} → %{redirect_url}\n' \
+  "https://lfxaeavvslnajgnyfvnz.supabase.co/auth/v1/authorize?provider=google&redirect_to=https%3A%2F%2Fwww.magicyoyoyo.com%2Fapi%2Fauth%2Fcallback"
+```
+
+| 结果 | 含义 |
+|---|---|
+| `HTTP 400` + `Unsupported provider` | provider **未启用** → 按钮当前不可用，按 **1.4** 配置 |
+| `HTTP 302` → `accounts.google.com` | 已启用 ✅ |
+
+> 建议把这条加进上线后的例行巡检：它能在不登录、不花钱的前提下，第一时间发现 Google 配置被误关。
 
 ---
 
@@ -304,6 +398,7 @@ grep -rl "文件名" . --exclude-dir=node_modules --exclude-dir=.next --exclude-
 | 6 | CI 未启用（`.github/workflows/ci.yml` 未能推送） | 无自动化检查 | 见附录 8 |
 | 7 | `public/og.png` 302KB 偏大 | 功能正常，分享抓取稍慢 | 可改输出 JPEG（约 100KB） |
 | 8 | `next.config.ts` 的 `images.remotePatterns` 已收紧为白名单 | 若以后用 `next/image` 加载其他域名的图片会报错 | 按需在白名单里加域名 |
+| 9 | **Google 一键登录尚未启用**（Supabase provider 未配置） | 按钮点击后显示白底裸 JSON 报错页 | 代码侧已全部修复，配置步骤见 **1.4**。⚠️ **在配置完成前，建议先把这个按钮临时隐藏**（`app/auth/login/LoginClient.tsx` 中 Google 按钮那段），避免用户看到报错页 —— 需要我做的话说一声 |
 
 
 ---
@@ -328,7 +423,10 @@ grep -rl "文件名" . --exclude-dir=node_modules --exclude-dir=.next --exclude-
 | `scripts/measure-og-text.js` | 测量 og 图文字像素范围（防止与头像重叠） |
 | `scripts/optimize-sample-image.js` | 首页示例图转 768px WebP |
 | `scripts/generate-test-fixtures.js` | 生成测试样本图片 |
-| `lib/supabase/migrations/*.sql` | 3 个 SQL 脚本（2 个迁移 + 1 个只读自检） |
+| `lib/supabase/migrations/*.sql` | 5 个 SQL 脚本（3 个迁移 + 2 个只读自检） |
+| `lib/authErrors.ts` | 认证错误码 → 用户文案的单一映射来源（含把 Supabase 自由文本归类成受控码的 `classifyAuthError`） |
+| `app/auth/login/LoginClient.tsx` | 登录/注册表单的客户端部分（原 `page.tsx`，因需服务端读 `searchParams` 而拆分） |
+| `scripts/verification/auth-errors.test.js` | 认证错误映射回归测试（28 项，含"未知取值不得回显"的安全性用例） |
 | `HANDOVER.md` | 本文档 |
 
 ### 删除（本轮）
@@ -459,5 +557,5 @@ jobs:
 
 ---
 
-*文档生成于 2026-10，覆盖提交 `f21178e..2327b79`（共 11 个提交）。*
+*文档生成于 2026-10，覆盖自 `f21178e` 起的 **13 个提交**（安全加固 → 工程质量 → 技术 SEO → 认证链路修复）。*
 

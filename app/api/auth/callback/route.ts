@@ -15,10 +15,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { getClientIp, getDeviceType, parseGeoLocation } from '@/lib/ip-parse';
 import { createRateLimiter, RATE_LIMITS } from '@/lib/rateLimit';
+import { classifyAuthError } from '@/lib/authErrors';
 
 /**
- * 记录用户登录日志（异步，不阻塞响应）
- * 
+ * 允许记录的登录方式（对应 user_login_logs.login_type 的约定取值）
+ * 该值来自请求体，会被写入日志并在后台展示，因此必须做白名单校验。
+ */
+const ALLOWED_LOGIN_TYPES: readonly string[] = ['email', 'google', 'github', 'guest'];
+
+/**
+ * 记录用户登录日志（内部吞掉全部异常，因此绝不会阻塞登录流程）
+ *
+ * 调用方应 `await` 本函数：在 Serverless 环境下，响应返回后运行环境可能立即冻结，
+ * 游离（未被 await）的 Promise 会被静默丢弃，导致日志缺失且难以察觉。
+ *
  * 安全说明：user_login_logs 的写入策略已收紧为仅 service_role 可用，
  * 因此这里必须使用 admin client（服务端可信通道）写入。
  * 调用前已通过 getUser() 校验用户身份，不会写入伪造数据。
@@ -145,13 +155,17 @@ export async function GET(request: NextRequest) {
     // 获取URL参数
     const { searchParams } = new URL(request.url);
     const code = searchParams.get('code');
-    const state = searchParams.get('state');
     const errorParam = searchParams.get('error');
-    
-    // 如果有错误参数
-    if (errorParam) {
-      console.error('[AuthCallback] Auth error:', errorParam);
-      return NextResponse.redirect(new URL('/auth/login?error=auth_failed', request.url));
+    const errorDescription = searchParams.get('error_description');
+
+    // 如果有错误参数：先归一化成受控错误码，再重定向
+    // （重定向 URL 中只允许出现我们自己定义的错误码，不回显 Supabase 返回的原文）
+    if (errorParam || errorDescription) {
+      const errorCode = classifyAuthError(errorParam, errorDescription);
+      console.error('[AuthCallback] Auth error:', errorParam, '-', errorDescription);
+      return NextResponse.redirect(
+        new URL(`/auth/login?error=${errorCode}`, request.url)
+      );
     }
     
     // 如果没有 code，返回错误
@@ -170,18 +184,19 @@ export async function GET(request: NextRequest) {
     const userId = authData.user.id;
     const userEmail = authData.user.email;
     
-    // 确定登录类型
-    let loginType = 'email';
-    if (state?.includes('google')) {
-      loginType = 'google';
-    } else if (state?.includes('github')) {
-      loginType = 'github';
-    }
-    
-    // 异步记录登录日志（不阻塞响应）
-    recordLogin(userId, request, loginType).catch(err => {
-      console.error('[AuthCallback] Failed to record login:', err);
-    });
+    // 确定登录方式
+    // 注意：不能用 state 判断 —— Supabase 的 state 是随机串，不含 provider 名称，
+    //       旧写法会把所有 Google 登录都错误地记成 email。
+    //       正确来源是 user.app_metadata.provider（google / email / github …）。
+    const provider = authData.user.app_metadata?.provider;
+    const loginType = typeof provider === 'string' && provider ? provider : 'email';
+
+    // 记录登录日志（必须 await）
+    // 说明：此前是「不阻塞响应」的游离 Promise，但在 Serverless 环境下响应返回后
+    //       运行环境可能立即冻结，写入会被静默丢弃 —— 日志缺失属于难以察觉的问题。
+    //       recordLogin 内部已有 try/catch + Promise.allSettled，失败不会影响登录流程，
+    //       因此这里可以安全地 await。
+    await recordLogin(userId, request, loginType);
     
     console.log('[AuthCallback] User logged in:', userEmail, 'type:', loginType);
     
@@ -214,14 +229,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
     
-    // 从请求体获取登录类型
+    // 从请求体获取登录类型（白名单校验：该值会写入日志并在后台展示）
     const body = await request.json().catch(() => ({}));
-    const loginType = body.loginType || 'email';
-    
-    // 异步记录登录日志
-    recordLogin(user.id, request, loginType).catch(err => {
-      console.error('[AuthCallback] POST failed to record login:', err);
-    });
+    const rawLoginType = typeof body?.loginType === 'string' ? body.loginType : 'email';
+    const loginType = ALLOWED_LOGIN_TYPES.includes(rawLoginType) ? rawLoginType : 'email';
+
+    // 记录登录日志（同样必须 await，原因见 GET 中的说明）
+    await recordLogin(user.id, request, loginType);
     
     return NextResponse.json({ success: true });
     

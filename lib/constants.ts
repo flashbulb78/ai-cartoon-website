@@ -26,6 +26,20 @@ export const MAX_IMAGE_WIDTH = 4096;
 export const MAX_IMAGE_HEIGHT = 4096;
 
 /**
+ * 新用户注册赠送的免费生成次数
+ *
+ * ⚠️ 权威来源是数据库 `app_settings.initial_credits`（由 handle_new_user 触发器读取）。
+ *    本常量只用于**面向用户的宣传文案**，两者必须保持一致，
+ *    否则会出现「宣传 X 次、实际给 Y 次」的信任落差。
+ *
+ *    历史上三处口径不一致：登录页写 5、首页写 2、数据库给 2 —— 现已统一为数据库口径。
+ *
+ * 改动前请先确认线上的实际取值：
+ *   select value from public.app_settings where key = 'initial_credits';
+ */
+export const FREE_GENERATIONS_FOR_NEW_USERS = 2;
+
+/**
  * 13套风格选项列表（按照MiniMax标准化开发文档）
  */
 export const STYLE_OPTIONS: StyleOption[] = [

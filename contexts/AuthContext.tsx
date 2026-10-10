@@ -165,13 +165,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   /**
    * Google登录
+   *
+   * 回调地址指向**服务端**接口 /api/auth/callback：
+   *   它在一个地方完成 code 交换 + 登录日志落库 + 错误归一化，再重定向回站内。
+   *
+   *   此前指向客户端页面 /auth/callback，导致 Google 登录的日志永远不会被写入
+   *   （后台日志页的「Google」筛选因此始终为空），且失败时没有任何提示。
    */
   const signInWithGoogle = useCallback(async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: `${window.location.origin}/api/auth/callback`,
         },
       });
 

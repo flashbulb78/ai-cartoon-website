@@ -1,52 +1,41 @@
-'use client';
-
 /**
  * app/auth/callback/page.tsx
- * OAuth认证回调页面
- * 处理Google等OAuth登录后的回调
- * 登录成功后自动跳转回首页
+ * OAuth 回调的**兼容入口**（只做转发，不含任何业务逻辑）
+ *
+ * 背景：
+ *   Google 登录的回调地址现在直接指向服务端接口 `app/api/auth/callback/route.ts`
+ *   —— code 交换、登录日志落库、错误归一化都在那一处完成。
+ *
+ * 本页面保留的意义（兜底，不是主链路）：
+ *   若 Supabase 的 Redirect URL 白名单未及时更新，或用户持有历史链接/旧标签页，
+ *   请求会落到这里。它不做任何处理，只把查询串原样转给服务端接口，
+ *   保证全站只有**一条**认证回调链路（避免两份实现各自失效）。
+ *
+ * 为什么用 redirect() 而不是 useEffect + exchangeCodeForSession：
+ *   旧实现是在浏览器里做 code 交换，失败时靠 router.push 回登录页 —— 一旦失败
+ *   用户看不到任何提示。改成服务端 307 跳转后，处理逻辑单点化，无静默失败空间。
  */
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { redirect } from 'next/navigation';
 
-export default function AuthCallbackPage() {
-  const router = useRouter();
+export default async function AuthCallbackPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const params = await searchParams;
 
-  useEffect(() => {
-    // 处理OAuth回调
-    const handleCallback = async () => {
-      const supabase = createClient();
+  // 原样转发查询串（code / error / error_description 统一交给服务端接口处理）
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (typeof value === 'string') {
+      query.set(key, value);
+    } else if (Array.isArray(value) && typeof value[0] === 'string') {
+      query.set(key, value[0]);
+    }
+  }
 
-      // 获取URL中的code和state参数
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get('code');
-
-      if (code) {
-        // 交换code获取session
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
-        if (!error) {
-          // 成功，跳转回首页
-          router.push('/');
-          return;
-        }
-        console.error('Callback error:', error);
-      }
-
-      // 失败或异常，跳转到登录页
-      router.push('/auth/login?error=auth_callback_failed');
-    };
-
-    handleCallback();
-  }, [router]);
-
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="text-center">
-        <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-gray-600">Completing sign in...</p>
-      </div>
-    </div>
-  );
+  const suffix = query.toString();
+  // 带尾斜杠：本项目启用了 trailingSlash，内部跳转若不带斜杠会多出一次 308
+  redirect(`/api/auth/callback/${suffix ? `?${suffix}` : ''}`);
 }

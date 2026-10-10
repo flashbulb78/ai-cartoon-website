@@ -1,0 +1,311 @@
+'use client';
+
+/**
+ * app/auth/login/LoginClient.tsx
+ * 登录/注册表单（客户端交互部分）
+ *
+ * 支持邮箱密码登录、注册和 Google 一键登录。
+ *
+ * 为什么拆成两个文件：
+ *   带 `?error=<code>` 的错误提示需要从 URL 读取。本版本 Next.js 中
+ *   useSearchParams 会让客户端树退化为 CSR（见官方文档），官方推荐的做法是
+ *   由 Server Component 读取 page 的 searchParams prop 再传下来 —— 这样
+ *   错误提示会直接出现在首屏 HTML 里。同 app/pricing/ 的拆分方式。
+ *
+ * Props:
+ *   initialError - 已由服务端解析好的错误文案（无错误时为 null）
+ */
+
+import { useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { useAuth } from '@/contexts/AuthContext';
+import { Button } from '@/components/ui/Button';
+import { FREE_GENERATIONS_FOR_NEW_USERS } from '@/lib/constants';
+
+export default function LoginClient({ initialError }: { initialError: string | null }) {
+  const router = useRouter();
+  const { signIn, signUp, signInWithGoogle } = useAuth();
+
+  // 状态
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  // 初始值来自 URL 的 ?error=（已由服务端解析成文案），保证首屏就能看到失败原因。
+  //
+  // 关于「同一路由换一个错误码时如何刷新」：由 page.tsx 传 key 触发重新挂载来保证
+  // （见 app/auth/login/page.tsx）。这样可以完全不写 useEffect ——
+  // 在 effect 里 setState 会触发级联渲染，React 不推荐。
+  const [error, setError] = useState<string | null>(initialError);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  // 密码验证状态
+  const passwordValidations = {
+    length: password.length >= 8,
+    uppercase: /[A-Z]/.test(password),
+    lowercase: /[a-z]/.test(password),
+  };
+  const isPasswordValid = passwordValidations.length && passwordValidations.uppercase && passwordValidations.lowercase;
+
+  /**
+   * 处理邮箱密码登录
+   */
+  const handleEmailLogin = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    setIsLoading(true);
+
+    try {
+      const result = await signIn(email, password);
+      if (result.error) {
+        // 使用更友好且安全的错误消息
+        setError('Incorrect email or password. Please try again.');
+      } else {
+        router.push('/');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [email, password, signIn, router]);
+
+  /**
+   * 处理邮箱注册
+   */
+  const handleEmailSignup = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    setIsLoading(true);
+
+    try {
+      const result = await signUp(email, password, fullName);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        setSuccess('Account created! Please check your email to verify your account.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [email, password, fullName, signUp]);
+
+  /**
+   * 处理Google登录
+   */
+  const handleGoogleLogin = useCallback(async () => {
+    setError(null);
+    setIsLoading(true);
+
+    try {
+      const result = await signInWithGoogle();
+      if (result.error) {
+        setError(result.error);
+      }
+      // 成功时页面会跳转到Google授权，授权完成后回调到首页
+    } finally {
+      setIsLoading(false);
+    }
+  }, [signInWithGoogle]);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <Link href="/" className="inline-flex items-center gap-3">
+            <img
+              src="/logo_192.png"
+              alt="Magic Cartoon Avatar Logo"
+              className="w-12 h-12 rounded-xl object-cover shadow-lg"
+            />
+            <span className="text-2xl font-bold text-gray-900">Magic Cartoon Avatar</span>
+          </Link>
+        </div>
+
+        {/* 登录卡片 */}
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 sm:p-8">
+          <div className="text-center mb-6">
+            <h1 className="text-2xl font-bold text-gray-900">
+              {isLogin ? 'Welcome Back' : 'Create Account'}
+            </h1>
+            <p className="text-gray-500 mt-2">
+              {isLogin ? 'Sign in to continue generating avatars' : `Start with ${FREE_GENERATIONS_FOR_NEW_USERS} free generations`}
+            </p>
+          </div>
+
+          {/* 错误/成功提示 */}
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl">
+              <p className="text-sm text-red-700">{error}</p>
+            </div>
+          )}
+
+          {success && (
+            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-xl">
+              <p className="text-sm text-green-700">{success}</p>
+            </div>
+          )}
+
+          {/* 表单 */}
+          <form onSubmit={isLogin ? handleEmailLogin : handleEmailSignup} className="space-y-5" noValidate>
+            {/* 名称（仅注册） */}
+            {!isLogin && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="John Doe"
+                  className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all"
+                />
+              </div>
+            )}
+
+            {/* 邮箱 */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (error) setError(null);
+                }}
+                placeholder="you@example.com"
+                required
+                className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all"
+              />
+            </div>
+
+            {/* 密码 */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-semibold text-gray-700">
+                  Password
+                </label>
+                <Link
+                  href="/auth/forgot-password"
+                  className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  Forgot password?
+                </Link>
+              </div>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (error) setError(null);
+                }}
+                placeholder="••••••••"
+                required
+                autoComplete="new-password"
+                title=" "
+                className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all"
+              />
+              
+              {/* 密码验证提示（仅注册时显示） */}
+              {!isLogin && password.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  <div className={`flex items-center gap-2 text-sm ${passwordValidations.length ? 'text-green-600' : 'text-red-500'}`}>
+                    {passwordValidations.length ? '✅' : '❌'}
+                    <span>At least 8 characters long</span>
+                  </div>
+                  <div className={`flex items-center gap-2 text-sm ${passwordValidations.uppercase ? 'text-green-600' : 'text-red-500'}`}>
+                    {passwordValidations.uppercase ? '✅' : '❌'}
+                    <span>Must contain uppercase letters (A-Z)</span>
+                  </div>
+                  <div className={`flex items-center gap-2 text-sm ${passwordValidations.lowercase ? 'text-green-600' : 'text-red-500'}`}>
+                    {passwordValidations.lowercase ? '✅' : '❌'}
+                    <span>Must contain lowercase letters (a-z)</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 提交按钮 */}
+            <Button
+              type="submit"
+              isLoading={isLoading}
+              disabled={!isLogin && !isPasswordValid}
+              className="w-full"
+              size="lg"
+            >
+              {isLogin ? 'Sign In' : 'Create Account'}
+            </Button>
+          </form>
+
+          {/* 分隔线 */}
+          <div className="flex items-center gap-4 my-6">
+            <div className="flex-1 h-px bg-gray-200" />
+            <span className="text-sm text-gray-400">or</span>
+            <div className="flex-1 h-px bg-gray-200" />
+          </div>
+
+          {/* Google登录 */}
+          <button
+            onClick={handleGoogleLogin}
+            disabled={isLoading}
+            className="w-full py-3 px-4 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-medium flex items-center justify-center gap-3 transition-all disabled:opacity-50"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24">
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+              />
+            </svg>
+            Continue with Google
+          </button>
+
+          {/* 切换登录/注册 */}
+          <div className="mt-6 text-center">
+            <p className="text-sm text-gray-500">
+              {isLogin ? "Don't have an account?" : 'Already have an account?'}{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLogin(!isLogin);
+                  setError(null);
+                  setSuccess(null);
+                }}
+                className="text-blue-600 hover:text-blue-700 font-medium"
+              >
+                {isLogin ? 'Sign Up' : 'Sign In'}
+              </button>
+            </p>
+          </div>
+        </div>
+
+        {/* 返回首页 */}
+        <div className="mt-6 text-center">
+          <Link
+            href="/"
+            className="text-sm text-gray-500 hover:text-gray-700"
+          >
+            ← Back to home
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
