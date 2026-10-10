@@ -60,6 +60,8 @@ The app uses local face-api.js models for face detection and analysis. No extern
 
 ## Maintenance Notes
 
+> 📘 **交接文档见 [`HANDOVER.md`](./HANDOVER.md)** —— 覆盖安全加固与 SEO 改动的部署项、验证方法、回滚方案、维护手册与已知遗留问题。
+
 ### Static assets (`public/`)
 
 - **`public/google<ID>.html` is a Google Search Console site-verification file.
