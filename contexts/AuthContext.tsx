@@ -10,6 +10,7 @@ import { createContext, useContext, useEffect, useState, useCallback, ReactNode 
 import { User, Session } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
 import { UserProfile } from '@/lib/types';
+import { resolveSignupOutcome, type SignupOutcome } from '@/lib/authFlow';
 
 // 认证上下文类型定义
 interface AuthContextType {
@@ -23,8 +24,19 @@ interface AuthContextType {
   isLoading: boolean;
   /** 登录 */
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  /** 注册 */
-  signUp: (email: string, password: string, fullName?: string) => Promise<{ error: string | null }>;
+  /**
+   * 注册
+   *
+   * 返回值：
+   *   error   - 出错时的提示文案，成功为 null
+   *   outcome - 成功时的走向（'signed-in' 表示已直接登录，'await-confirmation' 表示需去邮箱确认）；
+   *             出错时为 null
+   */
+  signUp: (
+    email: string,
+    password: string,
+    fullName?: string
+  ) => Promise<{ error: string | null; outcome: SignupOutcome | null }>;
   /** Google登录 */
   signInWithGoogle: () => Promise<{ error: string | null }>;
   /** 登出 */
@@ -139,10 +151,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   /**
    * 邮箱注册
+   *
+   * 关键点：返回值的 `outcome` 由 supabase.auth.signUp() 的 data.session 决定，
+   * 而不是去猜「邮箱确认是否开启」—— 关闭邮箱确认时 session 非空（用户已登录），
+   * 此时绝不能再提示用户去邮箱验证（那会让他在收件箱里白等，白白流失）。
    */
   const signUp = useCallback(async (email: string, password: string, fullName?: string) => {
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -153,13 +169,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
 
       if (error) {
-        return { error: error.message };
+        return { error: error.message, outcome: null };
       }
 
-      return { error: null };
+      return { error: null, outcome: resolveSignupOutcome(data) };
     } catch (error) {
       console.error('Sign up error:', error);
-      return { error: 'An unexpected error occurred' };
+      return { error: 'An unexpected error occurred', outcome: null };
     }
   }, [supabase]);
 

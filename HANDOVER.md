@@ -1,7 +1,7 @@
 # 交接文档 — 安全加固 + 技术 SEO + 认证链路 + 法律合规（2026-10）
 
-> 本文档覆盖本轮全部改动：**安全修复（P0-P3）→ 工程质量（P4）→ 技术 SEO → 登录/注册链路修复 → 法律页面与合规告知**
-> 共 **14 个提交**，全部已推送到 `origin/main` 并线上验证。
+> 本文档覆盖本轮全部改动：**安全修复（P0-P3）→ 工程质量（P4）→ 技术 SEO → 登录/注册链路修复 → 法律合规 → 注册转化修复**
+> 共 **17 个提交**，全部已推送到 `origin/main` 并线上验证。
 >
 > 仓库：https://github.com/flashbulb78/ai-cartoon-website
 > 线上：https://www.magicyoyoyo.com
@@ -173,7 +173,7 @@ curl -sS -o /dev/null -w 'HTTP %{http_code} → %{redirect_url}\n' \
 | og 分享图 | `public/og.png`（1200×630）+ `openGraph`/`twitter` 完整配置 | `scripts/generate-og-image.js` |
 | 首页 LCP 图片 | 246KB JPEG → **38KB WebP**（768px） | `scripts/optimize-sample-image.js` |
 | 清理死资源 | 删除 11 个 0 引用文件（约 520KB） | — |
-| 回归测试 | **110 项**（`bash scripts/verification/run.sh`） | `scripts/verification/` |
+| 回归测试 | **156 项**（`bash scripts/verification/run.sh`） | `scripts/verification/` |
 
 ### 2.7 认证链路修复（登录 / 注册）
 
@@ -191,6 +191,7 @@ curl -sS -o /dev/null -w 'HTTP %{http_code} → %{redirect_url}\n' \
 | 8 | 免费次数口径不一致 | 登录页写 **5 次**、首页写 2 次、数据库给 2 次 → 「宣传多于实际」的信任落差 | 统一到数据库口径，并抽成 `FREE_GENERATIONS_FOR_NEW_USERS` 单一来源 | `lib/constants.ts`、`app/page.tsx`、`app/auth/login/LoginClient.tsx` |
 | 9 | `login_type` 直接采用客户端上报值 | 任意字符串都会被写入日志并在后台展示 | 白名单校验（`email`/`google`/`github`/`guest`） | `app/api/auth/callback/route.ts` |
 | 10 | 缺少认证链路的回归保护 | 上述修复容易被后续改动悄悄改回 | 新增 28 项测试（含"未知取值不得回显"的安全性用例） | `scripts/verification/auth-errors.test.js`、`run.sh` |
+| 11 | **注册成功后的提示与实际情况不符** | 登录页**无条件**提示 "Please check your email to verify your account"，但线上 Supabase 的邮箱确认是**关闭**的（`mailer_autoconfirm: true`，实测确认）——注册即已登录。用户会跑去收件箱白等一封不需要的邮件，而且没有被引导进入应用（**对 $1.49 的产品就是直接流失**） | 改为**按 `signUp` 的返回值判断走向**（不看配置，看返回值）：有 `session` → 直接进应用；无 → 才提示去邮箱。逻辑抽到 `lib/authFlow.ts` 并加 13 项回归测试，把"已登录就绝不能让用户去邮箱"钉住 | `lib/authFlow.ts`、`contexts/AuthContext.tsx`、`app/auth/login/LoginClient.tsx` |
 
 
 **设计要点（为什么这么做）**
@@ -259,6 +260,16 @@ curl -sS -o /dev/null -w 'HTTP %{http_code} → %{redirect_url}\n' \
 
 > 测试对「文案内容」的断言会先折叠空白再匹配 —— 页面源码的句子会因排版折行被拆开，直接 `includes()` 会产生假失败（这一点在开发中被真实触发过，已修）。
 
+### 2.9 上线运维工具（新增）
+
+| 项目 | 内容 | 文件 |
+|---|---|---|
+| **Google OAuth 验收脚本** | `npm run verify:oauth` —— ① 读 Supabase `/auth/v1/settings`（权威来源）判断 provider 开关；② 端到端验证授权端点是否真的跳转 Google（不只信开关）；③ **跟随重定向**断言回调路由真正在线（仅看 308 不足 —— trailingSlash 跳转与路由是否存在无关）；④ 顺带报告 `mailer_autoconfirm` / `disable_signup` 等影响转化率的开关。失败时直接打印可复制的配置清单（含需要填的确切值） | `scripts/verify-oauth-setup.js` |
+| **迁移真机验证** | 在真实 PostgreSQL（PGlite = WASM 版 PG16，支持 plpgsql）上验证 `20260825_fix_username_collision.sql`：**先用 git 历史里的旧实现复现 Bug，再验证修复**，共 20 项断言（含 50 次冲突后的兜底、无邮箱、空白 username、search_path、触发器挂载、权限收紧、积分链路）。<br>验证结果：**20/20 通过**。<br>它同时证明了上一批认证修复在生产环境生效：`/api/auth/callback` → `/auth/login/?error=missing_code` | 一次性验证（未入库）。如需固化为常驻测试，需要把 `@electric-sql/pglite` 加进 devDependencies |
+| **真机验证驱动出的改进** | 测试把一条隐藏路径逼了出来：原兜底方案 `user_<id前8位>` 在极端情况下**仍可能冲突**（8 位十六进制在数万用户量级有碰撞概率），一旦碰撞就又回到"注册失败"。已改为 `user_<完整 UUID>`（即 `profiles.id`，库内不可能重复） | `20260825_fix_username_collision.sql`、`database.sql` |
+
+> 💡 这个脚本值得加进上线巡检流程：**不登录、不花钱**，一条命令就能发现 Google 配置被误关或注册开关被改。
+
 ---
 
 ## 三、验证方法（可直接复制粘贴）
@@ -270,7 +281,7 @@ cd /Users/superman/Desktop/ai-cartoon-website
 
 npx tsc --noEmit                  # 类型检查
 npx eslint .                      # 应 0 errors（38 个 warning 是历史遗留，不影响）
-bash scripts/verification/run.sh  # 回归测试，应「143 项全通过」
+bash scripts/verification/run.sh  # 回归测试，应「156 项全通过」
 npx next build                    # 生产构建
 ```
 
@@ -493,7 +504,7 @@ grep -rl "文件名" . --exclude-dir=node_modules --exclude-dir=.next --exclude-
 | `lib/structuredData.ts` | JSON-LD 结构化数据生成与安全序列化 |
 | `app/robots.ts` / `app/sitemap.ts` | `/robots.txt` 与 `/sitemap.xml` |
 | `app/pricing/PricingClient.tsx` | 定价页的客户端交互部分（数据由服务端传入） |
-| `scripts/verification/` | 回归测试（143 项）与独立测试样本 `fixtures/` |
+| `scripts/verification/` | 回归测试（156 项）与独立测试样本 `fixtures/` |
 | `scripts/generate-og-image.js` | 生成 `public/og.png`（社交分享图） |
 | `scripts/verify-og-image.js` | 用像素统计校验 og 图文字/图片渲染成功 |
 | `scripts/measure-og-text.js` | 测量 og 图文字像素范围（防止与头像重叠） |
@@ -509,6 +520,9 @@ grep -rl "文件名" . --exclude-dir=node_modules --exclude-dir=.next --exclude-
 | `components/LegalSection.tsx` | 两个法律页共用的章节容器 |
 | `components/SiteFooter.tsx` | 全站页脚（法律信息入口；此前全站没有任何指向法律页的链接） |
 | `scripts/verification/legal.test.js` | 法律信息一致性回归测试（33 项，防"页面声明与代码行为脱节"与"失实告知被重新引入"） |
+| `lib/authFlow.ts` | 注册成功后走向判断（已登录 → 直接进应用 / 需确认 → 提示去邮箱）与对应文案；零依赖纯函数 |
+| `scripts/verification/auth-flow.test.js` | 注册走向回归测试（13 项，核心断言：已登录的文案不得出现 email/verify/confirm） |
+| `scripts/verify-oauth-setup.js` | Google OAuth 验收脚本（`npm run verify:oauth`）：provider 开关 + 授权端点 + 回调路由三层检查 |
 | `HANDOVER.md` | 本文档 |
 
 ### 删除（本轮）
@@ -639,5 +653,5 @@ jobs:
 
 ---
 
-*文档生成于 2026-10，覆盖自 `f21178e` 起的 **14 个提交**（安全加固 → 工程质量 → 技术 SEO → 认证链路修复 → 法律合规）。*
+*文档生成于 2026-10，覆盖自 `f21178e` 起的 **17 个提交**（安全加固 → 工程质量 → 技术 SEO → 认证链路修复 → 法律合规 → 注册转化修复）。*
 

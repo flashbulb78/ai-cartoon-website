@@ -22,6 +22,7 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { FREE_GENERATIONS_FOR_NEW_USERS } from '@/lib/constants';
+import { SIGNUP_SUCCESS_MESSAGES } from '@/lib/authFlow';
 
 export default function LoginClient({ initialError }: { initialError: string | null }) {
   const router = useRouter();
@@ -82,15 +83,28 @@ export default function LoginClient({ initialError }: { initialError: string | n
 
     try {
       const result = await signUp(email, password, fullName);
+
       if (result.error) {
         setError(result.error);
-      } else {
-        setSuccess('Account created! Please check your email to verify your account.');
+        return;
+      }
+
+      // 走向由 signUp 的返回值决定（判断逻辑见 lib/authFlow.ts）：
+      //   'signed-in'          → 邮箱确认已关闭，注册即登录，直接进入应用
+      //   'await-confirmation' → 需要用户去邮箱完成确认
+      //
+      // 此前这里**无条件**提示「去邮箱验证」，而线上邮箱确认实际是关闭的 ——
+      // 用户会跑去收件箱白等一封不需要的邮件，白白流失。
+      const outcome = result.outcome ?? 'await-confirmation';
+      setSuccess(SIGNUP_SUCCESS_MESSAGES[outcome]);
+
+      if (outcome === 'signed-in') {
+        router.push('/');
       }
     } finally {
       setIsLoading(false);
     }
-  }, [email, password, fullName, signUp]);
+  }, [email, password, fullName, signUp, router]);
 
   /**
    * 处理Google登录
