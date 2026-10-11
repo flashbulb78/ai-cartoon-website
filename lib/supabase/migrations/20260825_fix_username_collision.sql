@@ -20,7 +20,7 @@
 --
 -- 【修复内容】
 --   1. 在触发器内捕获 unique_violation，按 base、base2、base3… 递增重试，
---      最终兜底使用 user_<id前8位> —— 保证注册流程不会再因用户名冲突而整体失败。
+--      最终兜底使用 user_<完整 UUID> —— 保证注册流程不会再因用户名冲突而整体失败。
 --   2. 补上 SET search_path = public：
 --      本函数是 SECURITY DEFINER，与库内较新的函数（protect_profile_sensitive_columns、
 --      process_credit_purchase）保持一致，消除 search_path 劫持面。
@@ -72,12 +72,18 @@ BEGIN
         -- 候选用户名：
         --   第 1 次     → base（保持原有行为，绝大多数用户拿到的用户名不变）
         --   第 2~50 次  → base2 … base50
-        --   第 51 次起  → user_<id前8位>（几乎不可能冲突）
+        --   第 51 次起  → user_<完整 UUID 去连字符>
+        --
+        -- 为什么兜底用**完整** UUID 而不是前 8 位：
+        --   profiles.id 就是该 UUID，故这个取值在库内不可能重复；
+        --   若只用前 8 位，理论上两个用户的 UUID 可能同前缀（8 位十六进制
+        --   在数万用户量级就有可观的碰撞概率），一旦碰撞就是又回到"注册失败"。
+        --   这条路径极难走到，但它的存在意义就是保证注册永不失败，所以取最长形式。
         IF attempt <= 50 THEN
             final_username := base_username
                               || CASE WHEN attempt = 1 THEN '' ELSE attempt::text END;
         ELSE
-            final_username := 'user_' || substr(NEW.id::text, 1, 8);
+            final_username := 'user_' || replace(NEW.id::text, '-', '');
         END IF;
 
         BEGIN

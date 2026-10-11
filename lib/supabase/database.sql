@@ -97,12 +97,14 @@ BEGIN
     LOOP
         attempt := attempt + 1;
 
-        -- 第 1 次 → base；第 2~50 次 → base2 … base50；第 51 次起 → user_<id前8位>
+        -- 第 1 次 → base；第 2~50 次 → base2 … base50；第 51 次起 → user_<完整 UUID>
+        -- （兜底用完整 UUID 而非前 8 位：后者在数万用户量级存在同前缀碰撞的可能，
+        --   一旦碰撞又会变成"注册失败"，而这条路径的意义正是保证注册永不失败）
         IF attempt <= 50 THEN
             final_username := base_username
                               || CASE WHEN attempt = 1 THEN '' ELSE attempt::text END;
         ELSE
-            final_username := 'user_' || substr(NEW.id::text, 1, 8);
+            final_username := 'user_' || replace(NEW.id::text, '-', '');
         END IF;
 
         BEGIN
