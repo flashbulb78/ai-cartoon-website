@@ -121,10 +121,14 @@ async function checkProviders(env) {
     line(
       'warn',
       '邮箱确认已关闭（mailer_autoconfirm = true）',
-      '注册后无需点邮件链接。⚠️ 但登录页仍提示 "Please check your email to verify your account"，与实际情况不符（会让用户白等邮件）'
+      '注册即登录，用户无需点击邮件链接。登录页已按 signUp 的返回值自动处理（见 lib/authFlow.ts）：有会话就直接进入应用，不会误导用户去邮箱'
     );
   } else {
-    line('warn', '邮箱确认已开启（需点邮件链接）', '会显著增加注册流失，但登录页的提示是准确的');
+    line(
+      'warn',
+      '邮箱确认已开启（用户需点击邮件链接才能登录）',
+      '这会增加注册流失（用户必须离开站点去收件箱）。登录页会自动提示"去邮箱验证"（见 lib/authFlow.ts），行为正确'
+    );
   }
 
   const others = Object.entries(external)
