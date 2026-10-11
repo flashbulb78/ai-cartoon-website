@@ -4,7 +4,7 @@
  * 使用Canvas和颜色分析从人脸图像中提取颜色特征
  */
 
-import * as faceapi from 'face-api.js';
+import type { FaceLandmarks68 } from 'face-api.js';
 import { Ethnicity } from './types';
 
 /**
@@ -400,7 +400,7 @@ function isSkinColorForHairDetection(r: number, g: number, b: number): boolean {
  */
 export function detectColorAttributes(
   imageBase64: string,
-  landmarks?: faceapi.FaceLandmarks68 | null,
+  landmarks?: FaceLandmarks68 | null,
   ethnicity?: Ethnicity | 'unknown',
   hasBangs?: boolean,
   hasGlasses?: boolean
@@ -583,7 +583,7 @@ export function detectColorAttributes(
 /**
  * 缩放特征点坐标（因为图像被缩放到maxSize）
  */
-function scaleLandmarks(landmarks: faceapi.FaceLandmarks68, scale: number): faceapi.FaceLandmarks68 {
+function scaleLandmarks(landmarks: FaceLandmarks68, scale: number): FaceLandmarks68 {
   const scaledPositions = landmarks.positions.map(pos => ({
     x: pos.x * scale,
     y: pos.y * scale
@@ -591,7 +591,7 @@ function scaleLandmarks(landmarks: faceapi.FaceLandmarks68, scale: number): face
   return {
     ...landmarks,
     positions: scaledPositions
-  } as faceapi.FaceLandmarks68;
+  } as FaceLandmarks68;
 }
 
 /**
@@ -599,7 +599,7 @@ function scaleLandmarks(landmarks: faceapi.FaceLandmarks68, scale: number): face
  * 使用眉毛和脸颊的位置来确定区域
  */
 function calculateSkinRegion(
-  landmarks: faceapi.FaceLandmarks68,
+  landmarks: FaceLandmarks68,
   w: number,
   h: number
 ): { x: number; y: number; w: number; h: number } {
@@ -656,7 +656,7 @@ function calculateSkinRegion(
  */
 function calculateMultiRegionSkinColor(
   imageData: ImageData,
-  landmarks: faceapi.FaceLandmarks68
+  landmarks: FaceLandmarks68
 ): { r: number; g: number; b: number; region: string } | null {
   const pos = landmarks.positions;
   const { data, width, height } = imageData;
@@ -778,7 +778,7 @@ function calculateMultiRegionSkinColor(
  */
 function getLightestSkinColor(
   pixels: Uint8ClampedArray,
-  landmarks: faceapi.FaceLandmarks68,
+  landmarks: FaceLandmarks68,
   w: number,
   h: number,
   hasGlasses: boolean = false
@@ -1087,7 +1087,7 @@ function getLightestSkinColor(
  * @param ethnicity - 可选的人种，African 人种使用特殊的额头纹理区域
  */
 function calculateHairRegion(
-  landmarks: faceapi.FaceLandmarks68,
+  landmarks: FaceLandmarks68,
   w: number,
   h: number,
   ethnicity?: Ethnicity | 'unknown',
@@ -1221,7 +1221,7 @@ function calculateHairRegion(
  * 使用眼部特征点位置来确定区域
  */
 function calculateEyeRegion(
-  landmarks: faceapi.FaceLandmarks68,
+  landmarks: FaceLandmarks68,
   w: number,
   h: number
 ): { x: number; y: number; w: number; h: number } {

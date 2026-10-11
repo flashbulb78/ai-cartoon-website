@@ -1,7 +1,7 @@
 # 交接文档 — 安全加固 + 技术 SEO + 认证链路 + 法律合规（2026-10）
 
-> 本文档覆盖本轮全部改动：**安全修复（P0-P3）→ 工程质量（P4）→ 技术 SEO → 登录/注册链路修复 → 法律合规 → 注册转化修复**
-> 共 **17 个提交**，全部已推送到 `origin/main` 并线上验证。
+> 本文档覆盖本轮全部改动：**安全修复（P0-P3）→ 工程质量（P4）→ 技术 SEO → 登录/注册链路修复 → 法律合规 → 注册转化修复 → 首屏性能**
+> 共 **18 个提交**，全部已推送到 `origin/main` 并线上验证。
 >
 > 仓库：https://github.com/flashbulb78/ai-cartoon-website
 > 线上：https://www.magicyoyoyo.com
@@ -270,6 +270,50 @@ curl -sS -o /dev/null -w 'HTTP %{http_code} → %{redirect_url}\n' \
 
 > 💡 这个脚本值得加进上线巡检流程：**不登录、不花钱**，一条命令就能发现 Google 配置被误关或注册开关被改。
 
+### 2.10 首屏性能优化：减掉 684KB（新增）
+
+**问题（实测发现）**：首页在用户做任何事之前就要下载约 **684KB（gzip）**：
+
+| 项目 | 体积 | 原因 |
+|---|---|---|
+| face-api.js 所在 chunk | 732KB 磁盘 / 181KB gzip | 被 4 个模块**静态 import**，整块打进首屏 |
+| 人脸模型 ×2 | 612KB 磁盘 / 503KB gzip | `useFaceCrop` 在**挂载时**就调用 `loadModels()`，连没上传照片的访客也白下 |
+
+> 对比：此前刚把首页示例图从 246KB 优化到 38KB —— 而这 684KB 是它的 **18 倍**，且"没做什么就花掉"。
+
+| # | 修复 | 做法 |
+|---|---|---|
+| ① | **模型按需加载** | 删除 `useFaceCrop` 挂载时的 `loadModels()`，改为在 `cropFace`（用户选中照片）时才加载。经检查 `isModelLoaded` **没有任何组件消费**，故对 UI 无影响 |
+| ② | **face-api 代码分割** | 新增 `lib/faceApi.ts` 懒加载器（缓存 Promise，天然去重、失败可重试）；4 个模块的静态导入改为 `import type`（类型编译期擦除）或 `await loadFaceApi()` |
+| ③ | faceAnalysis 也按需加载 | `app/page.tsx` 改为 `await import('@/lib/faceAnalysis')`，把约 3.6k 行分析代码也移出首屏 |
+| ④ | **消除重复下载模型** | `faceAnalysis.loadModels()` 曾用旧的 `loadTinyFaceDetectorModel` 再加载一遍（两套 `modelsLoaded` 标志互不知情）→ 改用 face-api 自身的 `nets.*.isLoaded` 复用已加载权重 |
+| ⑤ | **静态资源缓存头** | `next.config.ts` 为 `/models/*` 与 `/samples/*` 加 `max-age=86400, stale-while-revalidate=604800`（默认是 `max-age=0, must-revalidate`，即每次访问都要重新校验） |
+
+**实测前后对比**（同一台机器，构建后各测一次「首屏实际加载的 JS」）
+
+| | 首屏 JS（磁盘） | 首屏 JS（gzip） | chunk 数 |
+|---|---|---|---|
+| 改动前 | 1594 KB | 428 KB | 11 |
+| 改动后 | 921 KB | **263 KB** | 12 |
+| **减少** | **−673 KB** | **−165 KB** | |
+
+**真机（headless Chrome）端到端验证**
+
+| 检查 | 结果 |
+|---|---|
+| 页面加载后 `/models/*` 请求数 | **0** ✅（以前挂载即下载 620KB） |
+| 页面加载后 face-api 主包请求数 | **0** ✅（已移出首屏） |
+| 上传照片后 `/models/*` 与 face-api 主包 | 才被请求；manifest 与 shard 均 **200** ✅ |
+| 运行时提示 | 出现 **"No face detected"**（而非 "Failed to load face detection model"）→ 证明模型加载成功、检测已执行 ✅ |
+| 控制台错误 | **0** 条 ✅ |
+| 缓存头（本地 `next start` 实测） | `/models/*-shard1`、`*-weights_manifest.json`、`/samples/example.webp` 均返回新策略 ✅ |
+
+> ⚠️ **一处已知小事（不影响功能）**：`trailingSlash: true` 会让**没有扩展名**的路径也被 308 补斜杠，
+> 因此两个 shard 文件（`...-shard1`）首次请求会多一跳 —— 跳转后仍返回 **200 且内容完整**
+> （实测 193321 B 与源文件字节数一致），故不是故障。308 是永久重定向、浏览器会缓存，
+> 所以只在首次加载各付一次。修它需要改模型文件名并同步改 manifest（改资产、风险更大），
+> 收益远小于风险，故**刻意不改**。
+
 ---
 
 ## 三、验证方法（可直接复制粘贴）
@@ -523,6 +567,7 @@ grep -rl "文件名" . --exclude-dir=node_modules --exclude-dir=.next --exclude-
 | `lib/authFlow.ts` | 注册成功后走向判断（已登录 → 直接进应用 / 需确认 → 提示去邮箱）与对应文案；零依赖纯函数 |
 | `scripts/verification/auth-flow.test.js` | 注册走向回归测试（13 项，核心断言：已登录的文案不得出现 email/verify/confirm） |
 | `scripts/verify-oauth-setup.js` | Google OAuth 验收脚本（`npm run verify:oauth`）：provider 开关 + 授权端点 + 回调路由三层检查 |
+| `lib/faceApi.ts` | face-api.js 的唯一懒加载入口（缓存 Promise 去重、失败可重试）+ 模型就绪判断 |
 | `HANDOVER.md` | 本文档 |
 
 ### 删除（本轮）
@@ -653,5 +698,5 @@ jobs:
 
 ---
 
-*文档生成于 2026-10，覆盖自 `f21178e` 起的 **17 个提交**（安全加固 → 工程质量 → 技术 SEO → 认证链路修复 → 法律合规 → 注册转化修复）。*
+*文档生成于 2026-10，覆盖自 `f21178e` 起的 **18 个提交**（安全加固 → 工程质量 → 技术 SEO → 认证链路修复 → 法律合规 → 注册转化修复 → 首屏性能）。*
 

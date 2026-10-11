@@ -39,6 +39,42 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+
+      // ------------------------------------------------------------------
+      // 静态资源缓存策略
+      //
+      // 默认情况下 Next 对 public/ 下的文件返回
+      //   `cache-control: public, max-age=0, must-revalidate`
+      // 也就是**每次访问都要重新校验一次**。这对 /models 尤其浪费：
+      // 3 个模型权重文件合计约 612KB，几乎从不变化，却让每个回访者
+      // 都要多走几轮往返（/samples 下是首页 LCP 示例图，同理）。
+      //
+      // 这里给 1 天新鲜期 + 1 周 stale-while-revalidate：
+      //   · 1 天内回访：直接用本地缓存，零往返
+      //   · 1 天之后：先用旧版本渲染，后台静默校验，用户无感
+      //
+      // ⚠️ 刻意**不**用 `immutable, max-age=31536000`：这些文件名没有内容哈希，
+      //    一旦模型或示例图更新，长缓存会让回访者长时间看不到新版。
+      //    若将来改成带版本号的文件名（例如 `...-shard1-v2`），可放宽到一年。
+      // ------------------------------------------------------------------
+      {
+        source: '/models/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, stale-while-revalidate=604800',
+          },
+        ],
+      },
+      {
+        source: '/samples/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, stale-while-revalidate=604800',
+          },
+        ],
+      },
     ];
   },
   

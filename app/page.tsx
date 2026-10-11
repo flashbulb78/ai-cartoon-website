@@ -31,7 +31,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { CartoonStyle, ApiResponse, GenerateResponseData, STYLE_DEFAULT_PARAMS, FaceAnalysisResult } from '@/lib/types';
 import { DEFAULT_STYLE, ERROR_MESSAGES, FREE_GENERATIONS_FOR_NEW_USERS } from '@/lib/constants';
 import { useFaceCrop } from '@/hooks/useFaceCrop';
-import { analyzeFace } from '@/lib/faceAnalysis';
 
 /**
  * 首页默认展示的示例图（用户生成自己的头像前显示）
@@ -98,6 +97,10 @@ export default function HomePage() {
         
         // 全面人脸分析（包含肤色、发色、眼睛颜色、人种、头发特征等）
         // 使用原始图像而非裁剪图像，以便检测喉结等需要完整图像的特征
+        //
+        // 按需加载：faceAnalysis 及其依赖（约 3.6k 行分析代码）只在用户
+        // 真正选中照片后才需要，因此用动态 import 把它们移出首屏 bundle。
+        const { analyzeFace } = await import('@/lib/faceAnalysis');
         const analysis = await analyzeFace(originalImage);
         setFaceAnalysis(analysis);
         

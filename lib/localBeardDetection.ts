@@ -4,7 +4,7 @@
  * 使用图像分析检测面部毛发（胡须）
  */
 
-import * as faceapi from 'face-api.js';
+import type { FaceLandmarks68, Point } from 'face-api.js';
 
 interface BeardDetectionResult {
   hasBeard: boolean;
@@ -21,8 +21,8 @@ interface BeardDetectionResult {
  */
 export function detectBeardLocal(
   imageData: ImageData,
-  landmarks: faceapi.FaceLandmarks68,
-  pos: faceapi.Point[],
+  landmarks: FaceLandmarks68,
+  pos: Point[],
   skinTone: 'light' | 'medium' | 'dark' | 'medium_light' | 'medium_dark' | 'unknown'
 ): BeardDetectionResult {
   const { data, width, height } = imageData;

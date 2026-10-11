@@ -4,28 +4,39 @@
  * 检测性别、人种、面部特征、头发特征、颜色属性等
  */
 
-import * as faceapi from 'face-api.js';
+import type { FaceLandmarks68, Point } from 'face-api.js';
+import { loadFaceApi } from './faceApi';
 import { FaceAnalysisResult, Ethnicity, HairShape, HairLength, ColorAttributes } from './types';
 import { detectColorAttributes } from './colorDetection';
 import { detectBeardLocal } from './localBeardDetection';
 
-// 模型加载标志
-let modelsLoaded = false;
-
 /**
  * 加载face-api模型
+ *
+ * 性能相关（两处改动）：
+ *   1. face-api.js 改为**按需加载**（见 lib/faceApi.ts），不再静态打进首屏 bundle
+ *   2. 复用已加载的权重：useFaceCrop 通常已用 `nets.*.loadFromUri` 加载过模型，
+ *      而此前这里会用旧的 `loadTinyFaceDetectorModel/loadFaceLandmarkModel` 再加载一遍
+ *      —— 两套状态互不知情，导致每次生成都多走一轮约 550KB 的权重请求。
+ *      改用 face-api 自身的 `nets.*.isLoaded` 判断即可消除。
  */
 async function loadModels(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
-  if (modelsLoaded) return true;
-  
+
   try {
+    const faceapi = await loadFaceApi();
+
+    // 已经加载过就直接复用（useFaceCrop 很可能已经加载好了）
+    if (faceapi.nets.tinyFaceDetector.isLoaded && faceapi.nets.faceLandmark68Net.isLoaded) {
+      return true;
+    }
+
     const MODEL_URL = '/models';
     await Promise.all([
-      faceapi.loadTinyFaceDetectorModel(MODEL_URL),
-      faceapi.loadFaceLandmarkModel(MODEL_URL),
+      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
     ]);
-    modelsLoaded = true;
+
     console.log('[FaceAnalysis] Models loaded successfully');
     return true;
   } catch (error) {
@@ -58,7 +69,7 @@ function avgY(points: { x: number; y: number }[]): number {
  * 4. 配饰辅助 - 耳环/项链提升女性置信度
  */
 function detectGenderEnhanced(
-  landmarks: faceapi.FaceLandmarks68,
+  landmarks: FaceLandmarks68,
   hasBeard: boolean,
   hairLength: HairLength,
   shoulderRatio: number = 0,
@@ -181,7 +192,7 @@ function detectGenderEnhanced(
 /**
  * 简化版性别检测（仅基于面部特征）
  */
-function detectGender(landmarks: faceapi.FaceLandmarks68): { gender: 'male' | 'female'; confidence: number } {
+function detectGender(landmarks: FaceLandmarks68): { gender: 'male' | 'female'; confidence: number } {
   const pos = landmarks.positions;
   
   const jawWidth = Math.abs(pos[12].x - pos[4].x);
@@ -284,7 +295,7 @@ function detectEthnicity(
 /**
  * 检测脸型
  */
-function detectFaceShape(landmarks: faceapi.FaceLandmarks68): 'oval' | 'round' | 'square' | 'heart' | 'oblong' | 'unknown' {
+function detectFaceShape(landmarks: FaceLandmarks68): 'oval' | 'round' | 'square' | 'heart' | 'oblong' | 'unknown' {
   const pos = landmarks.positions;
   const faceWidth = Math.abs(pos[16].x - pos[0].x);
   const faceHeight = Math.abs(pos[8].y - pos[19].y);
@@ -309,7 +320,7 @@ function detectFaceShape(landmarks: faceapi.FaceLandmarks68): 'oval' | 'round' |
 /**
  * 检测鼻型
  */
-function detectNoseShape(landmarks: faceapi.FaceLandmarks68): 'straight' | 'curved' | 'round' | 'wide' | 'unknown' {
+function detectNoseShape(landmarks: FaceLandmarks68): 'straight' | 'curved' | 'round' | 'wide' | 'unknown' {
   const pos = landmarks.positions;
   const noseWidth = Math.abs(pos[35].x - pos[31].x);
   const nostrilWidth = Math.abs(pos[46].x - pos[41].x);
@@ -327,7 +338,7 @@ function detectNoseShape(landmarks: faceapi.FaceLandmarks68): 'straight' | 'curv
 /**
  * 检测眼睛形状
  */
-function detectEyeShape(landmarks: faceapi.FaceLandmarks68): 'almond' | 'round' | 'hooded' | 'upturned' | 'downturned' | 'unknown' {
+function detectEyeShape(landmarks: FaceLandmarks68): 'almond' | 'round' | 'hooded' | 'upturned' | 'downturned' | 'unknown' {
   const pos = landmarks.positions;
   const leftEye = pos.slice(36, 42);
   const rightEye = pos.slice(42, 48);
@@ -355,7 +366,7 @@ function detectEyeShape(landmarks: faceapi.FaceLandmarks68): 'almond' | 'round' 
 /**
  * 检测唇型
  */
-function detectLipShape(landmarks: faceapi.FaceLandmarks68): 'full' | 'thin' | 'medium' | 'unknown' {
+function detectLipShape(landmarks: FaceLandmarks68): 'full' | 'thin' | 'medium' | 'unknown' {
   const pos = landmarks.positions;
   const lipHeight = Math.abs(pos[57].y - pos[51].y);
   const mouthWidth = Math.abs(pos[54].x - pos[48].x);
@@ -372,7 +383,7 @@ function detectLipShape(landmarks: faceapi.FaceLandmarks68): 'full' | 'thin' | '
 /**
  * 检测下颌线
  */
-function detectJawline(landmarks: faceapi.FaceLandmarks68): 'soft' | 'sharp' | 'medium' | 'unknown' {
+function detectJawline(landmarks: FaceLandmarks68): 'soft' | 'sharp' | 'medium' | 'unknown' {
   const pos = landmarks.positions;
   
   // 计算两点之间的角度（返回弧度转角度）
@@ -406,7 +417,7 @@ function detectJawline(landmarks: faceapi.FaceLandmarks68): 'soft' | 'sharp' | '
  * 男性眉毛通常有明显倾斜：内高外低（\），即内侧高于外侧
  * 女性眉毛通常较平直或外高内低（/），倾斜度较小
  */
-function detectEyebrowAngle(landmarks: faceapi.FaceLandmarks68): number {
+function detectEyebrowAngle(landmarks: FaceLandmarks68): number {
   const pos = landmarks.positions;
   
   // 左眉毛：内角(21)到外角(17)的下降程度
@@ -428,7 +439,7 @@ function detectEyebrowAngle(landmarks: faceapi.FaceLandmarks68): number {
  * 增强的眼镜检测（基于面部特征点和图像分析）
  * 关注：镜框 + 瞳孔间距比
  */
-function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData): { hasGlasses: boolean; glassesType: 'none' | 'normal' | 'sunglasses' | 'unknown' } {
+function detectGlasses(landmarks: FaceLandmarks68, imageData?: ImageData): { hasGlasses: boolean; glassesType: 'none' | 'normal' | 'sunglasses' | 'unknown' } {
   const pos = landmarks.positions;
   
   // ========== 方法1：基于面部特征点的检测 ==========
@@ -713,7 +724,7 @@ function detectGlasses(landmarks: faceapi.FaceLandmarks68, imageData?: ImageData
  * 检测镜框颜色
  * 通过分析镜框区域的颜色来判断框架颜色
  */
-function detectGlassesFrameColor(imageData: ImageData | undefined, pos: faceapi.Point[]): 'black' | 'brown' | 'silver' | 'gold' | 'red' | 'blue' | 'white' | 'unknown' {
+function detectGlassesFrameColor(imageData: ImageData | undefined, pos: Point[]): 'black' | 'brown' | 'silver' | 'gold' | 'red' | 'blue' | 'white' | 'unknown' {
   if (!imageData) return 'unknown' as const;
   
   const { data, width, height } = imageData;
@@ -963,7 +974,7 @@ function detectBangs(imageData: ImageData): { hasBangs: boolean; style: 'none' |
  * 当下巴到脸颊区域有显著深色像素时，认为有络腮胡
  * @returns true 表示检测到下巴区域有胡须
  */
-function hasChinBeardTexture(imageData: ImageData, landmarks: faceapi.FaceLandmarks68): boolean {
+function hasChinBeardTexture(imageData: ImageData, landmarks: FaceLandmarks68): boolean {
   const { data, width, height } = imageData;
   const pos = landmarks.positions;
   
@@ -1007,7 +1018,7 @@ function hasChinBeardTexture(imageData: ImageData, landmarks: faceapi.FaceLandma
 /**
  * 检测头发长度 - 只检测头部上方的头发，排除胡须干扰
  */
-function detectHairLength(imageData: ImageData, landmarks?: faceapi.FaceLandmarks68, hasBeard?: boolean, hairShape?: HairShape, beardLength?: HairLength): { length: HairLength; confidence: number; shoulderRatio: number } {
+function detectHairLength(imageData: ImageData, landmarks?: FaceLandmarks68, hasBeard?: boolean, hairShape?: HairShape, beardLength?: HairLength): { length: HairLength; confidence: number; shoulderRatio: number } {
   const { data, width, height } = imageData;
   
   // 如果有 landmarks，结合方案1和方案2：扫描整个头部区域但排除面部中心
@@ -1448,6 +1459,10 @@ export async function analyzeFace(
       return defaultResult;
     }
 
+    // face-api 现在是按需加载：取回模块实例供下方使用。
+    // 与 loadModels 共享同一个 Promise，因此不会重复加载。
+    const faceapi = await loadFaceApi();
+
     console.log('[FaceAnalysis] Loading image...');
     const img = await loadImage(imageBase64);
     console.log('[FaceAnalysis] Image loaded, size:', img.width, 'x', img.height);
@@ -1480,7 +1495,7 @@ export async function analyzeFace(
     // - 单个 FaceLandmarks68 对象
     // - FaceLandmarks68[] 数组
     // - undefined
-    let landmarks: faceapi.FaceLandmarks68 | null = null;
+    let landmarks: FaceLandmarks68 | null = null;
 
     if (landmarksResult) {
       if (Array.isArray(landmarksResult)) {

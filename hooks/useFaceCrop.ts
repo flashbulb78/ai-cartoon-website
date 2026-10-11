@@ -9,8 +9,8 @@
  * - 只检测单张人脸，多人或无人脸都报错
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import * as faceapi from 'face-api.js';
+import { useState, useCallback, useRef } from 'react';
+import { loadFaceApi } from '@/lib/faceApi';
 
 interface FaceCropResult {
   success: boolean;
@@ -65,6 +65,9 @@ export function useFaceCrop(): UseFaceCropReturn {
     setError(null);
 
     try {
+      // face-api.js 按需加载（见 lib/faceApi.ts）：不静态导入，避免它进入首屏 bundle
+      const faceapi = await loadFaceApi();
+
       await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
 
       // 加载face_landmark_68_model用于性别检测
@@ -83,14 +86,17 @@ export function useFaceCrop(): UseFaceCropReturn {
   }, []);
 
   /**
-   * 预加载模型
+   * 说明：这里**刻意不再**在挂载时预加载模型。
+   *
+   * 历史行为是在 useEffect 里直接调用 loadModels()，导致**每一个访客**
+   * （哪怕他从不选择照片）一进首页就要下载约 550KB 的模型权重。
+   * 现在改为「真正需要时才加载」—— cropFace 内部会确保模型就绪，
+   * 且已有 isLoading 状态可供 UI 呈现等待过程。
+   *
+   * isModelLoaded 仍然对外返回（供需要感知状态的组件使用），
+   * 只是它会在首次实际检测之后才变为 true。经检查，当前没有任何组件
+   * 依赖它在挂载时即为 true，因此这个变化对 UI 无影响。
    */
-  useEffect(() => {
-    // loadModels 内部的 setState 均发生在 await 之后（非 effect 同步阶段），
-    // 不会造成级联渲染。该静态规则无法识别异步边界，故在此显式豁免。
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadModels();
-  }, [loadModels]);
 
   /**
    * 裁剪人脸 - 极简版
@@ -111,7 +117,10 @@ export function useFaceCrop(): UseFaceCropReturn {
 
       // 加载图片
       const img = await loadImageFromBase64(imageBase64);
-      
+
+      // face-api 为按需加载：这里取回模块实例（与 loadModels 共享同一 Promise，不会重复加载）
+      const faceapi = await loadFaceApi();
+
       // 使用 TinyFaceDetector 检测人脸
       const faceDetectorOptions = new faceapi.TinyFaceDetectorOptions({
         inputSize: 416,  // 增大输入尺寸以提高小人脸检测
