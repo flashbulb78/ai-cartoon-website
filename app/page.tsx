@@ -246,8 +246,14 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
       {/* 头部 - 已集成用户信息显示 */}
+      {/*
+        显示名优先用 full_name（用户自己填的姓名 / Google 返回的姓名），其次才是 username（邮箱前缀）。
+        原因：username 原本是 NULL，所以历史上一直显示 full_name；20260825 补列并回填后
+        username 有值了，若仍按「username 优先」，已有用户会突然看到邮箱前缀而不是姓名。
+        ⚠️ 注意：这类注释必须写在 JSX 子元素位置，不能写在 <Header> 的属性列表里（那会导致语法错误）。
+      */}
       <Header
-        userName={user ? (profile?.username || profile?.full_name || 'User') : undefined}
+        userName={user ? (profile?.full_name || profile?.username || 'User') : undefined}
         userAvatar={profile?.avatar_url}
         credits={profile?.credits}
         onLogin={handleLogin}
