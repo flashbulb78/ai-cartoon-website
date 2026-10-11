@@ -18,7 +18,7 @@
 |---|---|---|
 | `20260824_security_fix_rls.sql` | 修复 RLS 权限提升、profiles 积分篡改、函数越权 | 已确认执行 ✅（触发器已装） |
 | `20260824_payment_integrity.sql` | 新增 `process_credit_purchase()`（支付幂等入账） | **请确认** |
-| `20260825_fix_username_collision.sql` | 🔴 **待执行**：修复 username 唯一约束导致「注册整体失败」 | **请执行**（详见 2.7） |
+| `20260825_fix_username_collision.sql` | 修复 username 唯一约束导致「注册整体失败」 | ✅ **已执行并自检通过**（4 项 PASS；第 5 项信息项「无冲突」）|
 | `20260824_security_fix_verify.sql` | **只读自检**（不改数据），输出 8 项 PASS/FAIL | 建议现在跑一次 |
 | `20260825_fix_username_collision_verify.sql` | **只读自检**，输出 5 项 PASS/FAIL | 执行上面的迁移后跑 |
 
