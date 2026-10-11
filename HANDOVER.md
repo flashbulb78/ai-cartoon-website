@@ -8,7 +8,7 @@
 
 ---
 
-## 一、⚠️ 上线后必须确认的三件事
+## 一、⚠️ 上线后必须确认的五件事
 
 ### 1. 数据库迁移是否都已执行
 
@@ -97,7 +97,7 @@ curl -sS -o /dev/null -w 'HTTP %{http_code} → %{redirect_url}\n' \
 
 | 项 | 当前值 | 为什么必须确认 |
 |---|---|---|
-| `SUPPORT_EMAIL` | `support@magicyoyoyo.com` | **必须是真实可收信的邮箱**：隐私政策里的数据访问 / 删除 / 导出请求都发到这里，邮箱失效等于无法履行义务。⚠️ 站内原有联系邮箱是 `support@aicartoon.com`（**不是你的域名**，疑似模板遗留），已统一改成本值；若你确实在用那个邮箱，改回只需动这一行 |
+| `SUPPORT_EMAIL` | `jk3m11@gmail.com` ✅ **已确认** | 数据访问 / 删除 / 导出请求的入口，同时用于 Google consent screen 的支持邮箱。⚠️ 该地址会公开显示在隐私政策页上，**几乎必然被爬虫收集**，建议在 Gmail 里配置过滤规则 |
 | `GOVERNING_LAW`、`JURISDICTION_VENUE` | 中性表述 | 建议填你实际主体所在的具体法域（如 `the laws of the People's Republic of China`）。中性表述合法但不够清晰 |
 | `REFUND_WINDOW_DAYS` | `14` | **这是商业决定**：未使用积分的退款窗口。我按欧盟消费者撤回期的常见做法取 14 天 —— 改成 7 / 30 / 0 只改这个数字，条款措辞会自动跟随 |
 

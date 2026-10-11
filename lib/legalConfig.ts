@@ -18,12 +18,24 @@
 export const OPERATOR_NAME = 'Magic Cartoon Avatar';
 
 /**
- * 联系与数据主体请求邮箱
+ * 联系与数据主体请求邮箱（已确认可用）
  *
- * TODO(上线前): 确认该邮箱**真实可收信**（建议在域名 DNS 里配好或改成一个你每天会看的邮箱）。
- *               历史上站内曾出现过 support@aicartoon.com —— 那不是本站域名，已统一为本值。
+ * 用途（全部通过本常量，改动只需动这一处）：
+ *   • /privacy 与 /terms 里的联系入口 —— 数据访问、删除、导出请求都发到这里
+ *   • 全站页脚的「Contact」
+ *   • 价格页的「Need a custom plan? Contact us」
+ *   • Google OAuth consent screen 的「User support email」
+ *
+ * ⚠️ 两个现实提醒：
+ *   1. 该地址会**公开出现在隐私政策页面上**，因此几乎必然被爬虫收集并开始收到垃圾邮件。
+ *      建议在 Gmail 里为它配置过滤规则（例如只保留带关键词的邮件、其余归档）。
+ *   2. 请保持它**长期可收信**：隐私政策承诺的响应时限（30 天）以这里为入口，
+ *      邮箱失效等于无法履行义务，也会影响 Google OAuth 审核。
+ *
+ * 历史：站内曾出现过 support@aicartoon.com —— 那不是本站域名（疑似模板遗留），
+ *       已统一为本常量，全站不再有第二处硬编码。
  */
-export const SUPPORT_EMAIL = 'support@magicyoyoyo.com';
+export const SUPPORT_EMAIL = 'jk3m11@gmail.com';
 
 /** 对外服务的域名（用于界定"本服务"的范围） */
 export const SERVICE_DOMAIN = 'www.magicyoyoyo.com';
