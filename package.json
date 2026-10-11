@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "verify:oauth": "node scripts/verify-oauth-setup.js"
+    "verify:oauth": "node scripts/verify-oauth-setup.js",
+    "audit:schema": "node scripts/audit-schema.js"
   },
   "dependencies": {
     "@microsoft/clarity": "^1.0.2",

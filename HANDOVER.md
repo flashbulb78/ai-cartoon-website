@@ -1,7 +1,7 @@
 # 交接文档 — 安全加固 + 技术 SEO + 认证链路 + 法律合规（2026-10）
 
 > 本文档覆盖本轮全部改动：**安全修复（P0-P3）→ 工程质量（P4）→ 技术 SEO → 登录/注册链路修复 → 法律合规 → 注册转化修复 → 首屏性能**
-> 共 **18 个提交**，全部已推送到 `origin/main` 并线上验证。
+> 共 **22 个提交**，全部已推送到 `origin/main` 并线上验证。
 >
 > 仓库：https://github.com/flashbulb78/ai-cartoon-website
 > 线上：https://www.magicyoyoyo.com
@@ -21,6 +21,7 @@
 | `20260825_fix_username_collision.sql` | 修复 username 唯一约束导致「注册整体失败」 | ✅ **已执行并自检通过**（4 项 PASS；第 5 项信息项「无冲突」）|
 | `20260824_security_fix_verify.sql` | **只读自检**（不改数据），输出 8 项 PASS/FAIL | 建议现在跑一次 |
 | `20260825_fix_username_collision_verify.sql` | **只读自检**，输出 5 项 PASS/FAIL | 执行上面的迁移后跑 |
+| `20260825_hotfix_username_column.sql` | 🔴 **紧急修复**：补上缺失的 `profiles.username` 列（并做真实触发自检） | ✅ **已执行并验证**（见 2.11 事故复盘）|
 
 **自检期望结果（8 项全 PASS）：**
 
@@ -58,7 +59,41 @@
 | 8 | 后台日志页（F12 → Network） | 首次进入**只发 1 次**请求 |
 | 9 | `user_login_logs` 表 | 登录后有新记录（**Google 登录同样要写日志**，见第 4 节） |
 
-### 4. Google 一键登录：当前不可用，需先完成两项后台配置
+### 4. Google 一键登录：✅ 已启用并完成端到端验证
+
+**结论：已全部完成**（2026-10-11）。真机实测结果：
+
+| 检查 | 结果 |
+|---|---|
+| Google Cloud：OAuth 客户端 + 同意屏幕已发布为「正式版」 | ✅ |
+| Supabase：Google provider 已启用 | ✅ |
+| 点击「Continue with Google」→ 正确跳转 Google（**不再是 JSON 报错页**）| ✅ |
+| 跳转参数 `client_id` / `redirect_uri` / `scope` / `state` | ✅ 全部正确 |
+| 应用发出的 `redirect_to` 与 Supabase 白名单**逐字一致** | ✅ `https://www.magicyoyoyo.com/api/auth/callback` |
+| 真实登录一次 | ✅ 成功登录，拿到 2 免费积分 |
+| 新用户自动建档（username / full_name / avatar_url 来自 Google）| ✅ |
+| `user_login_logs` 写入 `login_type = google` | ✅ **（这张表以前对 Google 永远是空的，即最初反馈的 bug）** |
+
+> 复现这套验证只需一条命令：`npm run verify:oauth`
+
+<details>
+<summary>配置过程要点（供新环境重建时参考）</summary>
+
+| 步骤 | 位置 | 关键值 |
+|---|---|---|
+| 1 | Google Cloud → OAuth client ID（**Web 应用**）| Authorized JS origins：`https://www.magicyoyoyo.com`、`http://localhost:3000`<br>Authorized redirect URIs：**`https://lfxaeavvslnajgnyfvnz.supabase.co/auth/v1/callback`**（是 Supabase 的地址，不是本站）|
+| 2 | Google Cloud → Branding | App name / 支持邮箱 / 首页 / 隐私政策 / 服务条款 / 已获授权网域 `magicyoyoyo.com`、开发者邮箱 |
+| 3 | Google Cloud → Audience | **PUBLISH APP**（停留在 Testing 时只有 100 个测试用户能登录）|
+| 4 | Supabase → Providers → Google | Client IDs + Client Secret；`Skip nonce checks` 与 `Allow users without an email` 都不勾 |
+| 5 | Supabase → URL Configuration | Site URL + 4 条 Redirect URLs（`/api/auth/callback` **不带尾斜杠**）|
+
+**两个最容易踩的坑**：
+- 重定向 URI 填成自己网站的地址 → 报 `redirect_uri_mismatch`
+- 忘记 PUBLISH APP → 普通用户看到 "Access blocked"
+
+**不要上传应用徽标**：Google 的策略是「上传徽标 + 发布」可能触发人工验证，会拖住上线。
+
+</details>
 
 **现状（已实测确认）**：登录/注册页的「Continue with Google」按钮点击后，浏览器会跳到 Supabase 授权端点并收到一段**裸 JSON 报错**（白底页面）：
 
@@ -314,6 +349,45 @@ curl -sS -o /dev/null -w 'HTTP %{http_code} → %{redirect_url}\n' \
 > 所以只在首次加载各付一次。修它需要改模型文件名并同步改 manifest（改资产、风险更大），
 > 收益远小于风险，故**刻意不改**。
 
+### 2.11 🔴 事故复盘：一次差点毁掉注册的 schema drift（新增）
+
+**时间线**
+
+| 步骤 | 发生了什么 |
+|---|---|
+| 1 | 为修复「同前缀邮箱导致注册失败」写迁移 `20260825_fix_username_collision.sql`，让 `handle_new_user()` 写入 `profiles.username` |
+| 2 | 我在写迁移前**只看了仓库里的 `database.sql`**（它定义了 username），**没有核对线上真实结构** |
+| 3 | 迁移在真实 PostgreSQL（PGlite）上验证 20/20 通过 —— 但那个验证环境也是照 `database.sql` 搭的，**用了同一个错误前提** |
+| 4 | 自检脚本 4 项 PASS → 误以为没问题（它只检查「函数定义里包含 unique_violation」，**没有真的跑一次注册**）|
+| 5 | 用户执行迁移。但线上 `profiles` 根本没有 username 列 → **每一次新用户注册都失败**（plpgsql 不校验列名，只在运行时才报错，所以函数创建成功、自检也 PASS）|
+| 6 | 用户测 Google 登录失败（`user_login_logs` 没有新记录）→ 我查库时看到 `column profiles.username does not exist` → 定位根因 |
+| 7 | 写紧急修复（补列 + 真机验证 11/11）→ 执行 → 注册恢复 → Google 登录成功，`login_type = google` 首次写入 |
+
+**根因（一句话）**：把「仓库里的建库脚本」当成了「线上真实结构」，而两者已经 drift 很久。
+
+**三项防护（已落地）**
+
+| # | 防护 | 落地物 |
+|---|---|---|
+| 1 | **动库前先读真实结构** | `npm run audit:schema`：从 PostgREST 的 OpenAPI 端点（真实结构的权威来源）读出全部表的列，与 `database.sql` 逐表比对，列出「线上有脚本缺」与「脚本有线上缺」；有差异时退出码非 0 |
+| 2 | **自检必须"真跑一次"，不能只看定义** | 紧急修复脚本第 4 步：向 `auth.users` 插入一个测试用户 → 读取 `profiles` → 主动抛错回滚（不留数据）。旧自检只检查函数定义文本，这正是它漏掉本次事故的原因 |
+| 3 | **保证脚本与线上一致** | 已补齐 `pricing_packages.dodo_product_id` 与 `profiles.is_admin`；`database.sql` 顶部加了「改完表结构请跑 audit:schema」的说明；当前 audit 输出 **0 差异** |
+
+**顺带发现并修掉的两个隐患**
+
+- 🔴 `pricing_packages.dodo_product_id` 在脚本里缺失 → 若哪天用脚本重建数据库，**结账功能会直接坏掉**（`create-checkout` 读不到 Dodo 商品 ID）
+- `app/api/admin/user-stats` 的 `.select('email, username')` 一直在查不存在的列 → 补列后自动恢复
+
+**写迁移时的自检清单（今后照此执行）**
+
+```
+□ 1. 先 npm run audit:schema，确认脚本与线上一致
+□ 2. 只信 OpenAPI 读出的真实列，不信 database.sql
+□ 3. 迁移里引用的每个列，都要在 audit 输出里存在
+□ 4. 自检要真跑一次业务动作（如插入一个用户再回滚），不能只看定义
+□ 5. 执行后立刻把同样的改动补进 database.sql，再跑一次 audit 确认 0 差异
+```
+
 ---
 
 ## 三、验证方法（可直接复制粘贴）
@@ -525,7 +599,7 @@ grep -rl "文件名" . --exclude-dir=node_modules --exclude-dir=.next --exclude-
 | 6 | CI 未启用（`.github/workflows/ci.yml` 未能推送） | 无自动化检查 | 见附录 8 |
 | 7 | `public/og.png` 302KB 偏大 | 功能正常，分享抓取稍慢 | 可改输出 JPEG（约 100KB） |
 | 8 | `next.config.ts` 的 `images.remotePatterns` 已收紧为白名单 | 若以后用 `next/image` 加载其他域名的图片会报错 | 按需在白名单里加域名 |
-| 9 | **Google 一键登录尚未启用**（Supabase provider 未配置） | 按钮点击后显示白底裸 JSON 报错页 | 代码侧已全部修复，配置步骤见 **1.4**；consent screen 需要的隐私政策页也已就绪。⚠️ **在配置完成前，建议先把这个按钮临时隐藏**（`app/auth/login/LoginClient.tsx` 中 Google 按钮那段），避免用户看到报错页 —— 需要我做的话说一声 |
+| 9 | ~~Google 一键登录未启用~~ | — | ✅ **已解决**（2026-10-11）：已启用并端到端验证（真实登录成功 + `login_type = google` 正常写入），详见 **1.4** |
 | 10 | **登录日志的保留期限目前只是「声明」** | 隐私政策写了「账号存续期间 + 之后最多 12 个月」，但 `user_login_logs` / `user_access_stats` **没有自动清理任务**，实际是长期保留 | 两个选择：① 加一个定期清理（`pg_cron` 或 Vercel Cron 调用的接口，约 1 小时工作量）；② 把政策措辞改成「为安全目的保留，直至你请求删除」。**当前状态属于声明与实现不一致，建议尽快处理** |
 | 11 | **账户删除 / 数据导出是人工处理** | 隐私政策承诺「收到请求后 30 天内删除」，但系统**没有自助删除账号入口**，只能由你手工在 Supabase 后台删 | 短期靠流程（记得在 30 天内处理邮件）；中期可做「请求删除」按钮 + 后台一键删除。隐私政策已如实写明是「联系我们」，因此不构成问题 |
 | 12 | 法律页面是**按代码行为写实的模板**，非律师出稿 | 责任限制、退款、适用法律三节是按常见做法写的 | 上线前建议律师按你的司法辖区过一遍；另见 **1.5** 的 3 项待确认 |
@@ -567,6 +641,8 @@ grep -rl "文件名" . --exclude-dir=node_modules --exclude-dir=.next --exclude-
 | `lib/authFlow.ts` | 注册成功后走向判断（已登录 → 直接进应用 / 需确认 → 提示去邮箱）与对应文案；零依赖纯函数 |
 | `scripts/verification/auth-flow.test.js` | 注册走向回归测试（13 项，核心断言：已登录的文案不得出现 email/verify/confirm） |
 | `scripts/verify-oauth-setup.js` | Google OAuth 验收脚本（`npm run verify:oauth`）：provider 开关 + 授权端点 + 回调路由三层检查 |
+| `scripts/audit-schema.js` | schema 审计（`npm run audit:schema`）：把线上真实结构（OpenAPI）与 `database.sql` 逐表比对，防 drift 事故 |
+| `lib/supabase/migrations/20260825_hotfix_username_column.sql` | 紧急修复：补上缺失的 `profiles.username` 列（含"真实触发 + 回滚"自检）|
 | `lib/faceApi.ts` | face-api.js 的唯一懒加载入口（缓存 Promise 去重、失败可重试）+ 模型就绪判断 |
 | `HANDOVER.md` | 本文档 |
 
@@ -698,5 +774,5 @@ jobs:
 
 ---
 
-*文档生成于 2026-10，覆盖自 `f21178e` 起的 **18 个提交**（安全加固 → 工程质量 → 技术 SEO → 认证链路修复 → 法律合规 → 注册转化修复 → 首屏性能）。*
+*文档生成于 2026-10，覆盖自 `f21178e` 起的 **22 个提交**（安全加固 → 工程质量 → 技术 SEO → 认证链路修复 → 法律合规 → 注册转化修复 → 首屏性能 → Google 登录上线 → schema 事故修复）。*
 

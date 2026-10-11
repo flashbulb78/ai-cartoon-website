@@ -1,6 +1,17 @@
 -- =====================================================
 -- Supabase 数据库初始化SQL
 -- 执行此SQL创建所需的表结构和RLS策略
+--
+-- ⚠️ 本脚本用于「从零重建一个与线上相同的库」，因此**必须与线上真实结构保持一致**。
+--    历史教训：本脚本曾漏掉 pricing_packages.dodo_product_id（缺它会导致支付无法发起）
+--    与 profiles.is_admin，而线上却有；同时线上缺 profiles.username 而脚本有。
+--    这类 drift 曾导致一次生产事故（触发器写入不存在的列 → 新用户注册全部失败）。
+--
+--    改完表结构后，请用下面的命令核对线上与本脚本是否一致（需要 .env.local）：
+--        npm run audit:schema
+--    它会逐表列出「线上有但脚本缺」和「脚本有但线上缺」的列。
+--
+-- ✅ 推荐的工作流：先在线上执行迁移 → 立刻在本脚本补同样的改动 → 跑 audit:schema 确认 0 差异
 -- =====================================================
 
 -- 1. 创建用户表（profiles）
@@ -15,6 +26,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     is_premium BOOLEAN DEFAULT FALSE,
     stripe_customer_id TEXT,
     stripe_subscription_id TEXT,
+    is_admin BOOLEAN DEFAULT FALSE,      -- 历史列：后台权限以 admins 表为准，代码不依赖此列（见 api/admin/stats）
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -193,6 +205,7 @@ CREATE TABLE IF NOT EXISTS public.pricing_packages (
     price DECIMAL(10, 2) NOT NULL,
     currency TEXT DEFAULT 'USD' NOT NULL,
     description TEXT,
+    dodo_product_id TEXT,                 -- Dodo Payments 的商品 ID（结账必填；缺失会导致无法发起支付）
     is_active BOOLEAN DEFAULT TRUE NOT NULL,
     is_highlighted BOOLEAN DEFAULT FALSE NOT NULL,
     sort_order INTEGER DEFAULT 0 NOT NULL,
